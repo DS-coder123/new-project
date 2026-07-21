@@ -386,7 +386,13 @@ document.addEventListener('keydown', e => {
   e.preventDefault();
 });
 document.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; e.preventDefault(); });
-document.addEventListener('mousedown', e => { if (e.button === 0) mouseDown = true; e.preventDefault(); });
+document.addEventListener('mousedown', e => {
+  if (e.button === 0) {
+    mouseDown = true;
+    shoot(); // fire immediately on click
+  }
+  e.preventDefault();
+});
 document.addEventListener('mouseup', e => { if (e.button === 0) mouseDown = false; e.preventDefault(); });
 document.addEventListener('mousemove', e => {
   mouseX = e.clientX;
