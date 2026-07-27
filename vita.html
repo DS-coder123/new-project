@@ -9,26 +9,26 @@
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --blue-dark: #000000;
-            --blue-primary: #2563eb;
-            --blue-mid: #3b82f6;
-            --blue-accent: #29ABE2;
-            --blue-light: #1a1a1a;
-            --cream: #111111;
-            --white: #000000;
-            --gray-50: #0a0a0a;
-            --gray-100: #1a1a1a;
-            --gray-200: #333333;
-            --gray-400: #888888;
-            --gray-600: #cccccc;
+            --blue-dark: #1e3a8a;
+            --blue-primary: #3b82f6;
+            --blue-mid: #60a5fa;
+            --blue-accent: #93c5fd;
+            --blue-light: #1e40af;
+            --cream: #1e3a8a;
+            --white: #2563eb;
+            --gray-50: #1d4ed8;
+            --gray-100: #1e40af;
+            --gray-200: #3b82f6;
+            --gray-400: #93c5fd;
+            --gray-600: #dbeafe;
             --gray-800: #ffffff;
             --text: #ffffff;
-            --text-light: #aaaaaa;
+            --text-light: #bfdbfe;
             --heading: #ffffff;
             --radius: 16px;
             --radius-sm: 8px;
-            --shadow: 0 4px 24px rgba(0,0,0,0.3);
-            --shadow-lg: 0 12px 48px rgba(0,0,0,0.4);
+            --shadow: 0 4px 24px rgba(0,0,0,0.2);
+            --shadow-lg: 0 12px 48px rgba(0,0,0,0.3);
             --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
@@ -215,7 +215,7 @@
             align-items: center;
             position: relative;
             overflow: hidden;
-            background: #000000;
+            background: #1e3a8a;
             padding-top: 72px;
         }
 
@@ -394,8 +394,23 @@
             object-fit: contain;
             filter: drop-shadow(0 8px 20px rgba(0,0,0,0.10));
             transition: var(--transition);
+            animation: productFloat 3s ease-in-out infinite;
         }
-        .product-card:hover .product-emoji { transform: scale(1.08); }
+        .product-card:hover .product-emoji { transform: scale(1.08); animation-play-state: paused; }
+
+        @keyframes productFloat {
+            0%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
+            60% { transform: translateY(-4px); }
+        }
+
+        .product-card:nth-child(1) .product-emoji { animation-delay: 0s; }
+        .product-card:nth-child(2) .product-emoji { animation-delay: 0.4s; }
+        .product-card:nth-child(3) .product-emoji { animation-delay: 0.8s; }
+        .product-card:nth-child(4) .product-emoji { animation-delay: 0.2s; }
+        .product-card:nth-child(5) .product-emoji { animation-delay: 0.6s; }
+        .product-card:nth-child(6) .product-emoji { animation-delay: 1.0s; }
+        .product-card:nth-child(7) .product-emoji { animation-delay: 1.4s; }
 
         .product-name {
             font-family: 'Playfair Display', serif;
