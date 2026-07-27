@@ -1,0 +1,4 @@
+;/*FB_PKG_DELIM*/
+
+__d("CometTahoeRootQuery_facebookRelayOperation",[],(function(t,n,r,o,a,i){a.exports="27832393023067625"}),null);
+__d("ProfileCometFeaturedHighlightsPortraitAspectRatioGK.relayprovider",["gkx"],(function(t,n,r,o,a,i,l){"use strict";var e={get:function(){return r("gkx")("2694")}};l.default=e}),98);
