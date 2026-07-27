@@ -9,6 +9,30 @@
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
+            --blue-dark: #000000;
+            --blue-primary: #2563eb;
+            --blue-mid: #3b82f6;
+            --blue-accent: #29ABE2;
+            --blue-light: #1a1a1a;
+            --cream: #111111;
+            --white: #000000;
+            --gray-50: #0a0a0a;
+            --gray-100: #1a1a1a;
+            --gray-200: #333333;
+            --gray-400: #888888;
+            --gray-600: #cccccc;
+            --gray-800: #ffffff;
+            --text: #ffffff;
+            --text-light: #aaaaaa;
+            --heading: #ffffff;
+            --radius: 16px;
+            --radius-sm: 8px;
+            --shadow: 0 4px 24px rgba(0,0,0,0.3);
+            --shadow-lg: 0 12px 48px rgba(0,0,0,0.4);
+            --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        [data-theme="light"] {
             --blue-dark: #0d2e66;
             --blue-primary: #134B8D;
             --blue-mid: #1f56a9;
@@ -16,19 +40,17 @@
             --blue-light: #e8f4fd;
             --cream: #FFF8F0;
             --white: #ffffff;
-            --gray-50: #f7faff;
-            --gray-100: #edf2f7;
-            --gray-200: #e2e8f0;
+            --gray-50: #f5f5f5;
+            --gray-100: #e5e5e5;
+            --gray-200: #d4d4d4;
             --gray-400: #a0aec0;
-            --gray-600: #718096;
-            --gray-800: #2d3748;
-            --text: #1a202c;
-            --text-light: #4a5568;
-            --radius: 16px;
-            --radius-sm: 8px;
+            --gray-600: #555555;
+            --gray-800: #111111;
+            --text: #000000;
+            --text-light: #444444;
+            --heading: #134B8D;
             --shadow: 0 4px 24px rgba(0,0,0,0.06);
             --shadow-lg: 0 12px 48px rgba(0,0,0,0.10);
-            --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -49,8 +71,9 @@
             position: fixed;
             top: 0; left: 0; right: 0;
             z-index: 1000;
-            background: rgba(255,255,255,0.95);
+            background: var(--white);
             backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
             border-bottom: 1px solid var(--gray-100);
             padding: 0 2rem;
             transition: var(--transition);
@@ -117,13 +140,67 @@
         .nav-cta:hover { background: var(--blue-mid); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(19,75,141,0.3); }
 
         .lang-switch {
+            position: relative;
             display: flex; align-items: center; gap: 6px;
             background: var(--gray-50); border: 1px solid var(--gray-200);
             padding: 6px 14px; border-radius: 50px; cursor: pointer;
-            font-size: 0.85rem; font-weight: 600; color: var(--blue-primary);
-            transition: var(--transition);
+            font-size: 0.85rem; font-weight: 600; color: var(--text);
+            transition: var(--transition); white-space: nowrap;
         }
         .lang-switch:hover { background: var(--blue-light); }
+
+        .lang-dropdown {
+            position: absolute;
+            top: 110%;
+            right: 0;
+            background: var(--white);
+            border: 1px solid var(--gray-200);
+            border-radius: var(--radius-sm);
+            box-shadow: var(--shadow-lg);
+            list-style: none;
+            min-width: 130px;
+            overflow: hidden;
+            display: none;
+            z-index: 2000;
+        }
+        .lang-dropdown.open { display: block; }
+        .lang-dropdown li {
+            padding: 10px 16px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: var(--text);
+            transition: var(--transition);
+            white-space: nowrap;
+        }
+        .lang-dropdown li:hover { background: var(--gray-100); }
+        .lang-dropdown li.active { color: var(--blue-accent); font-weight: 700; }
+
+        .theme-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            border: 2px solid var(--blue-accent);
+            background: var(--blue-accent);
+            cursor: pointer;
+            font-size: 1.1rem;
+            transition: var(--transition);
+            color: #ffffff;
+            flex-shrink: 0;
+        }
+        .theme-toggle:hover { background: #3bc5f0; border-color: #3bc5f0; }
+
+        [data-theme="light"] .theme-toggle {
+            background: #ffffff;
+            border-color: #cccccc;
+            color: #333333;
+        }
+        [data-theme="light"] .theme-toggle:hover {
+            background: #f0f0f0;
+            border-color: #aaaaaa;
+        }
 
         .hamburger { display: none; flex-direction: column; gap: 5px; cursor: pointer; background: none; border: none; padding: 4px; }
         .hamburger span { width: 24px; height: 2px; background: var(--blue-primary); border-radius: 2px; transition: var(--transition); }
@@ -138,7 +215,7 @@
             align-items: center;
             position: relative;
             overflow: hidden;
-            background: #0d2e66;
+            background: #000000;
             padding-top: 72px;
         }
 
@@ -263,7 +340,7 @@
             font-family: 'Playfair Display', serif;
             font-weight: 900;
             font-size: clamp(2rem, 4vw, 2.8rem);
-            color: var(--blue-dark);
+            color: var(--heading);
             letter-spacing: -0.5px;
             margin-bottom: 1rem;
         }
@@ -323,13 +400,14 @@
         .product-name {
             font-family: 'Playfair Display', serif;
             font-weight: 700;
-            color: var(--blue-dark);
+            color: var(--heading);
             font-size: 1.1rem;
             margin-bottom: 4px;
         }
         .product-desc {
             font-size: 0.85rem;
             color: var(--gray-600);
+            font-weight: 700;
         }
 
         .products-cta { text-align: center; margin-top: 3rem; }
@@ -342,23 +420,15 @@
             align-items: center;
         }
         .about-image {
-            background: linear-gradient(135deg, #e8f4fd, #fdf8f2);
             border-radius: var(--radius);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 400px;
-            font-size: 8rem;
-            position: relative;
             overflow: hidden;
         }
-        .about-image::after {
-            content: '';
-            position: absolute;
-            bottom: 0; left: 0; right: 0;
-            height: 60%;
-            background: linear-gradient(to top, rgba(19,75,141,0.04), transparent);
-            pointer-events: none;
+        .about-image img {
+            width: 100%;
+            height: 100%;
+            min-height: 400px;
+            object-fit: cover;
+            display: block;
         }
 
         .about-features { display: flex; flex-direction: column; gap: 1.5rem; }
@@ -377,7 +447,7 @@
             font-size: 1.4rem;
             flex-shrink: 0;
         }
-        .about-feature h4 { font-weight: 600; color: var(--blue-dark); margin-bottom: 4px; }
+        .about-feature h4 { font-weight: 600; color: var(--heading); margin-bottom: 4px; }
         .about-feature p { font-size: 0.9rem; color: var(--text-light); line-height: 1.5; }
 
         /* ── Stats ──────────────────────── */
@@ -427,7 +497,7 @@
         .recipe-body h4 {
             font-family: 'Playfair Display', serif;
             font-weight: 700;
-            color: var(--blue-dark);
+            color: var(--heading);
             font-size: 1.2rem;
             margin-bottom: 0.5rem;
         }
@@ -468,7 +538,7 @@
             font-size: 1.4rem;
             background: var(--blue-light);
         }
-        .author-name { font-weight: 600; color: var(--blue-dark); font-size: 0.9rem; }
+        .author-name { font-weight: 600; color: var(--heading); font-size: 0.9rem; }
         .author-role { font-size: 0.8rem; color: var(--gray-600); }
 
         /* ── Newsletter ─────────────────── */
@@ -623,19 +693,33 @@
             </a>
 
             <ul class="nav-links" id="navLinks">
-                <li><a href="#home">Home</a></li>
-                <li><a href="#about">About Us</a></li>
-                <li><a href="#products">Products</a></li>
-                <li><a href="#recipes">Recipes</a></li>
-                <li><a href="#testimonials">Reviews</a></li>
-                <li><a href="#contact">Contact</a></li>
-                <li><a href="#contact" class="nav-cta">Get in Touch</a></li>
-                <li><button class="lang-switch">🇦🇱 SQ</button></li>
+                <li><a href="#home" data-lkey="nav_home">Home</a></li>
+                <li><a href="#about" data-lkey="nav_about">About Us</a></li>
+                <li><a href="#products" data-lkey="nav_products">Products</a></li>
+                <li><a href="#recipes" data-lkey="nav_recipes">Recipes</a></li>
+                <li><a href="#testimonials" data-lkey="nav_reviews">Reviews</a></li>
+                <li><a href="#contact" data-lkey="nav_contact">Contact</a></li>
+                <li><a href="#contact" class="nav-cta" data-lkey="nav_cta">Get in Touch</a></li>
+                <li><button class="lang-switch" id="langBtn" aria-label="Change language"><span id="langLabel">SQ</span> ▾</button>
+                    <ul class="lang-dropdown" id="langDropdown">
+                        <li data-lang="sq" class="active">🇦🇱 Shqip</li>
+                        <li data-lang="en">🇬🇧 English</li>
+                        <li data-lang="de">🇩🇪 Deutsch</li>
+                        <li data-lang="fr">🇫🇷 Français</li>
+                    </ul>
+                </li>
             </ul>
 
             <div style="display:flex;align-items:center;gap:1rem;">
+                <button class="theme-toggle desktop" id="themeToggleDesktop" aria-label="Toggle theme">☀️</button>
                 <a href="#contact" class="nav-cta desktop">Contact Us</a>
-                <button class="lang-switch desktop">🇦🇱 SQ</button>
+                <button class="lang-switch desktop" id="langBtnDesktop" aria-label="Change language"><span id="langLabelDesktop">SQ</span> ▾</button>
+                <ul class="lang-dropdown" id="langDropdownDesktop" style="display:none;">
+                    <li data-lang="sq" class="active">🇦🇱 Shqip</li>
+                    <li data-lang="en">🇬🇧 English</li>
+                    <li data-lang="de">🇩🇪 Deutsch</li>
+                    <li data-lang="fr">🇫🇷 Français</li>
+                </ul>
                 <button class="hamburger" id="hamburger" aria-label="Menu">
                     <span></span><span></span><span></span>
                 </button>
@@ -651,7 +735,7 @@
         <div class="hero-overlay"></div>
         <div class="hero-inner">
             <div class="hero-content">
-                <div class="hero-badge">
+                <div class="hero-badge" data-lkey="hero_badge">
                     <span class="dot"></span> Since 1995 · 100% Natural
                 </div>
                 <h1>Fresh Thinking.<br><span>Fresh Dairy.</span></h1>
@@ -724,7 +808,7 @@
         <div class="section-inner">
             <div class="about-grid">
                 <div class="about-image reveal">
-                    🐄
+                    <img src="https://images.unsplash.com/photo-1570042225831-d98fa7577f1e?w=700&h=500&fit=crop&auto=format" alt="Vita dairy farm with cows">
                 </div>
                 <div class="about-content reveal">
                     <div class="section-tag">About Us</div>
@@ -1010,6 +1094,292 @@
         }, { threshold: 0.5 });
 
         document.querySelectorAll('[data-count]').forEach(el => counterObserver.observe(el));
+
+        // ── Theme toggle ──────────────────
+        const html = document.documentElement;
+        const themeKey = 'vita-theme';
+
+        function setTheme(theme) {
+            html.setAttribute('data-theme', theme);
+            localStorage.setItem(themeKey, theme);
+            const icon = theme === 'light' ? '🌙' : '☀️';
+            document.querySelectorAll('.theme-toggle').forEach(btn => btn.textContent = icon);
+        }
+
+        // Init from localStorage or default dark
+        const saved = localStorage.getItem(themeKey) || 'dark';
+        setTheme(saved);
+
+        document.querySelectorAll('.theme-toggle').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+                setTheme(next);
+            });
+        });
+
+        // ── Language system ──────────────
+        const translations = {
+            sq: {
+                nav_home:'Kreu',nav_about:'Rreth Nesh',nav_products:'Produktet',nav_recipes:'Receta',nav_reviews:'Vleresime',nav_contact:'Kontakti',nav_cta:'Na Kontaktoni',
+                hero_badge:'Qe nga 1995 · 100% Natyrale',hero_title:'Mendim i Fresket.<br>Bulmet i Fresket.',hero_desc:'Nga fermat tona ne tavolinen tuaj — sjellim qumeshtin me te paster, kosin me kremoz dhe produktet me te mira te bulmetit ne Kosove. Cdo pike eshte premium cilesie.',
+                hero_btn1:'Zbulo Produktet →',hero_btn2:'Historia Jone',hero_scroll:'Leviz per te eksploruar',
+                products_tag:'GAMA JONE',products_title:'Zbulo Produktet Tona te Shijshme',products_sub:'Nga qumeshti i fresket te kosi kremoz — cdo produkt eshte punuar me kujdes, duke perdorur perberesit me te mire vendor dhe metodat tradicionale.',
+                milk_name:'Vita Qumesht 3.2%',milk_desc:'Qumesht i fresket i plote',jogurt_name:'Vita Jogurt 1.5%',jogurt_desc:'Kos kremoz me pak yndyre',
+                ayran_name:'Ayran 1.2%',ayran_desc:'Pije e kripur freskuese',kos_name:'Kos 3.2% 400g',kos_desc:'Kos i trashe tradicional',
+                cook_name:'Cooking Cream 1L',cook_desc:'Perfekte per cdo gjelle',whip_name:'Whipping Cream',whip_desc:'Embelsira te lehta dhe me push',
+                cheese_name:'Vita Cheese',cheese_desc:'Djath i pasur artizanal',products_cta:'Shiko te Gjitha Produktet →',
+                about_tag:'RRETH NESH',about_title:'Cilesi ku Mund te Besoni,<br>Nga Ferma ne Tavoline',about_desc:'Per me shume se 25 vjet, Qumeshtorja Vita ka qene marka me e besuar e bulmetit ne Kosove. Bashkepunojme me 200+ ferma familjare, perpunojme qumeshtin brenda oreve te grumbullimit dhe mbajme standardet me te rrepta — sepse familja juaj meriton me te miren.',
+                feat1_title:'Ferma Familjare Vendore',feat1_desc:'Punojme drejtperdrejt me 200+ ferma ne gjithe Kosoven, duke siguruar tregti te drejte dhe qumeshtin me te fresket cdo mengjes.',
+                feat2_title:'Cilesi e Certifikuar',feat2_desc:'Te certifikuar ISO 22000. Cdo batch testohet. Cdo shishe mund te gjurmohet deri te ferma nga erdhi.',
+                feat3_title:'Pa Kompromise',feat3_desc:'Pa hormone artificiale. Pa konservues. Thjesht bulmet i paster, natyral — ashtu sic e ka menduar natyra.',
+                stat1:'Vite Ekselence',stat2:'Ferma Partnere',stat3:'Litra te Perpunuar ne Dite',stat4:'Bulmeti #1 ne Kosove',
+                recipes_tag:'INSPIRIME KUZHINE',recipes_title:'Receta te Shijshme me Vita',recipes_sub:'Nxirr me te miren ne kuzhinen tuaj me keto receta te perzgjedhura.',
+                rec1_title:'Petulla me Qumesht',rec1_desc:'Fillojeni mengjesin me keto petulla te buta te pergaditura me qumesht te fresket Vita.',rec1_tag:'Mengjes',
+                rec2_title:'Cheesecake Kremoz',rec2_desc:'Nje cheesecake prej kadifeje qe shkrihet ne goje, e bere me Vita Cooking Cream.',rec2_tag:'Embelsire',
+                rec3_title:'Pasta Alfredo',rec3_desc:'Salce e pasur kremoze Alfredo — sekreti eshte Vita Whipping Cream.',rec3_tag:'Darka',
+                rec4_title:'Ayran Tradicional',rec4_desc:'Pija perfekte verore — kos, uje dhe nje majë kripe. E thjeshte dhe e paster.',rec4_tag:'Pije',
+                rec5_title:'Burek me Kos',rec5_desc:'Petë e shtresuar me kos te pasur — nje klasik kosovar i riimagjinuar.',rec5_tag:'Tradicionale',
+                rec6_title:'Akullore Shtepie',rec6_desc:'Akullore kremoze e bere ne shtepi duke perdorur Vita Whipping Cream dhe qumesht te fresket.',rec6_tag:'Embelsire',
+                test_tag:'CFARE THONE NJEREZIT',test_title:'E Dashur nga Familjet ne Gjithe Kosoven',test_sub:'Degjoni nga klientet tane qe e fillojne cdo mengjes me Vita ne tavoline.',
+                test1_text:'"Qumeshti Vita ka qene pjese e mengjesit te familjes sone per aq kohe sa mbaj mend. Cilesia nuk ndryshon kurre — gjithmone i fresket, gjithmone kremoz. Femijet e mi e duan!"',test1_name:'Arlinda G.',test1_role:'Nene e 3 femijeve, Prishtine',
+                test2_text:'"Si shef kuzhine, jam shume i kujdesshem per bulmetin. Vita Cooking Cream eshte zgjedhja ime — teksture e qendrueshme, perqindje perfekte yndyre dhe nuk ndahet ne gjelle te nxehta. Esenciale ne kuzhinen time."',test2_name:'Besnik R.',test2_role:'Shef Ekzekutiv, Prizren',
+                test3_text:'"Kalova te kosi Vita tre vjet me pare dhe nuk u ktheva me. Tekstura eshte jashtezakonisht kremoze dhe te dish qe vjen nga ferma vendore e ben shijen edhe me te mire."',test3_name:'Drita M.',test3_role:'Nutricioniste, Peje',
+                news_tag:'QENDRO I LIDHUR',news_title:'Merr Perditesime te Fresketa dhe Receta Ekskluzive',news_sub:'Bashkohu ne buletinin tone per njoftime te reja, receta sezonale dhe oferta speciale ne emailin tuaj.',news_ph:'Adresa juaj e emailit',news_btn:'Abonohu',
+                footer_desc:'Mendim i fresket. Bulmet i fresket. Nga fermat tona ne tavolinen tuaj, sjellim produktet me te pastra te bulmetit qe ofron Kosova — cdo dite.',
+                footer_prod:'PRODUKTET',footer_comp:'KOMPANIA',footer_cont:'KONTAKTI',
+                footer_p1:'Qumesht i Fresket',footer_p2:'Kos',footer_p3:'Ayran',footer_p4:'Krema',footer_p5:'Djath',
+                footer_c1:'Rreth Nesh',footer_c2:'Karriera',footer_c3:'Cilesia',footer_c4:'Lajme',footer_c5:'Kontakti',
+                footer_pp:'Politika e Privatesise',footer_ts:'Kushtet e Sherbimit',
+            },
+            de: {
+                nav_home:'Start',nav_about:'Uber uns',nav_products:'Produkte',nav_recipes:'Rezepte',nav_reviews:'Bewertungen',nav_contact:'Kontakt',nav_cta:'Kontaktieren',
+                hero_badge:'Seit 1995 · 100% Naturlich',hero_title:'Frisches Denken.<br>Frische Milch.',hero_desc:'Von unseren Familienbetrieben auf Ihren Tisch — wir liefern die reinste Milch, den cremigsten Joghurt und die besten Milchprodukte im Kosovo. Jeder Tropfen ist ein Qualitatsversprechen.',
+                hero_btn1:'Produkte Entdecken →',hero_btn2:'Unsere Geschichte',hero_scroll:'Scrollen zum Entdecken',
+                products_tag:'UNSER SORTIMENT',products_title:'Entdecken Sie Unsere Kostlichen Produkte',products_sub:'Von frischer Milch bis zu cremigem Joghurt — jedes Produkt wird mit Sorgfalt aus den besten lokalen Zutaten und traditionellen Methoden hergestellt.',
+                milk_name:'Vita Milch 3,2%',milk_desc:'Frische Vollmilch',jogurt_name:'Vita Joghurt 1,5%',jogurt_desc:'Cremiger fettarmer Joghurt',
+                ayran_name:'Ayran 1,2%',ayran_desc:'Erfrischendes Salzgetrank',kos_name:'Kos 3,2% 400g',kos_desc:'Dicker traditioneller Joghurt',
+                cook_name:'Kochsahne 1L',cook_desc:'Perfekt fur jedes Gericht',whip_name:'Schlagsahne',whip_desc:'Leichte & luftige Desserts',
+                cheese_name:'Vita Kase',cheese_desc:'Reichhaltiger handwerklicher Kase',products_cta:'Alle Produkte Anzeigen →',
+                about_tag:'UBER UNS',about_title:'Qualitat der Sie Vertrauen Konnen,<br>Vom Hof auf den Tisch',about_desc:'Seit uber 25 Jahren ist Qumeshtorja Vita die vertrauenswurdigste Molkereimarke im Kosovo. Wir arbeiten mit uber 200 Familienbetrieben zusammen, verarbeiten die Milch innerhalb weniger Stunden und halten die strengsten Qualitatsstandards ein.',
+                feat1_title:'Lokale Familienbetriebe',feat1_desc:'Wir arbeiten direkt mit uber 200 Betrieben im Kosovo zusammen und sorgen fur fairen Handel und die frischeste Milch jeden Morgen.',
+                feat2_title:'Zertifizierte Qualitat',feat2_desc:'ISO 22000 zertifiziert. Jede Charge wird getestet. Jede Flasche ist bis zum Hof ruckverfolgbar.',
+                feat3_title:'Keine Kompromisse',feat3_desc:'Keine kunstlichen Hormone. Keine Konservierungsstoffe. Einfach reine, naturliche Milchprodukte — so wie die Natur es vorgesehen hat.',
+                stat1:'Jahre Exzellenz',stat2:'Partnerbetriebe',stat3:'Liter taglich verarbeitet',stat4:'Nr. 1 Molkerei im Kosovo',
+                recipes_tag:'KUCHENINSPIRATION',recipes_title:'Kostliche Rezepte mit Vita',recipes_sub:'Holen Sie das Beste aus Ihrer Kuche mit diesen handverlesenen Rezepten.',
+                rec1_title:'Flauschige Milchpfannkuchen',rec1_desc:'Starten Sie Ihren Morgen mit diesen wolkenartigen Pfannkuchen aus frischer Vita Milch.',rec1_tag:'Fruhstuck',
+                rec2_title:'Cremiger Kasekuchen',rec2_desc:'Ein samtiger Kasekuchen, der auf der Zunge zergeht, zubereitet mit Vita Kochsahne.',rec2_tag:'Dessert',
+                rec3_title:'Alfredo Pasta',rec3_desc:'Reichhaltige, cremige Alfredo-Sauce — das Geheimnis ist Vita Schlagsahne.',rec3_tag:'Abendessen',
+                rec4_title:'Traditioneller Ayran',rec4_desc:'Die perfekte Sommererfrischung — Joghurt, Wasser und eine Prise Salz. Einfach und rein.',rec4_tag:'Getranke',
+                rec5_title:'Burek mit Kos',rec5_desc:'Bletterteig geschichtet mit reichhaltigem Kos-Joghurt — ein neu interpretierter Kosovar-Klassiker.',rec5_tag:'Traditionell',
+                rec6_title:'Hausgemachtes Eis',rec6_desc:'Cremiges hausgemachtes Eis mit Vita Schlagsahne und frischer Milch.',rec6_tag:'Dessert',
+                test_tag:'WAS DIE LEUTE SAGEN',test_title:'Geliebt von Familien im Ganzen Kosovo',test_sub:'Horen Sie von unseren Kunden, die jeden Morgen mit Vita beginnen.',
+                test1_text:'"Vita Milch ist seit ich denken kann Teil unseres Familienfruhstucks. Die Qualitat andert sich nie — immer frisch, immer cremig. Meine Kinder lieben sie!"',test1_name:'Arlinda G.',test1_role:'Mutter von 3, Pristina',
+                test2_text:'"Als Koch bin ich bei Milchprodukten wahlerisch. Vita Kochsahne ist meine Wahl — gleichbleibende Textur, perfekter Fettgehalt, und sie gerinnt nie in heissen Gerichten."',test2_name:'Besnik R.',test2_role:'Kuchenchef, Prizren',
+                test3_text:'"Bin vor drei Jahren auf Vita Joghurt umgestiegen und habe nie zuruckgeschaut. Die Textur ist unglaublich cremig."',test3_name:'Drita M.',test3_role:'Ernahrungsberaterin, Peja',
+                news_tag:'VERBUNDEN BLEIBEN',news_title:'Erhalten Sie Frische Updates & Exklusive Rezepte',news_sub:'Abonnieren Sie unseren Newsletter fur neue Produkte, saisonale Rezepte und Sonderangebote.',news_ph:'Ihre E-Mail-Adresse',news_btn:'Abonnieren',
+                footer_desc:'Frisches Denken. Frische Milch. Von unseren Familienbetrieben auf Ihren Tisch — wir bringen Ihnen jeden Tag die reinsten Milchprodukte des Kosovo.',
+                footer_prod:'PRODUKTE',footer_comp:'UNTERNEHMEN',footer_cont:'KONTAKT',
+                footer_p1:'Frischmilch',footer_p2:'Joghurt',footer_p3:'Ayran',footer_p4:'Sahne',footer_p5:'Kase',
+                footer_c1:'Uber uns',footer_c2:'Karriere',footer_c3:'Qualitat',footer_c4:'Nachrichten',footer_c5:'Kontakt',
+                footer_pp:'Datenschutz',footer_ts:'AGB',
+            },
+            fr: {
+                nav_home:'Accueil',nav_about:'A Propos',nav_products:'Produits',nav_recipes:'Recettes',nav_reviews:'Avis',nav_contact:'Contact',nav_cta:'Nous Contacter',
+                hero_badge:'Depuis 1995 · 100% Naturel',hero_title:'Pensee Fraiche.<br>Produits Frais.',hero_desc:'De nos fermes familiales a votre table — nous livrons le lait le plus pur, le yaourt le plus cremeux et les meilleurs produits laitiers du Kosovo. Chaque goutte est une promesse de qualite.',
+                hero_btn1:'Decouvrir nos Produits →',hero_btn2:'Notre Histoire',hero_scroll:'Defiler pour explorer',
+                products_tag:'NOTRE GAMME',products_title:'Decouvrez nos Delicieux Produits',products_sub:'Du lait frais au yaourt cremeux — chaque produit est elabore avec soin, utilisant les meilleurs ingredients locaux et des methodes traditionnelles.',
+                milk_name:'Vita Lait 3,2%',milk_desc:'Lait entier frais',jogurt_name:'Vita Yaourt 1,5%',jogurt_desc:'Yaourt cremeux allege',
+                ayran_name:'Ayran 1,2%',ayran_desc:'Boisson salee rafraichissante',kos_name:'Kos 3,2% 400g',kos_desc:'Yaourt epais traditionnel',
+                cook_name:'Creme de Cuisson 1L',cook_desc:'Parfaite pour chaque plat',whip_name:'Creme a Fouetter',whip_desc:'Desserts legers et aeriens',
+                cheese_name:'Vita Fromage',cheese_desc:'Fromage artisanal riche',products_cta:'Voir Tous les Produits →',
+                about_tag:'A PROPOS',about_title:'Une Qualite en Laquelle Vous Pouvez<br>Avoir Confiance, de la Ferme a la Table',about_desc:'Depuis plus de 25 ans, Qumeshtorja Vita est la marque laitiere la plus fiable du Kosovo. Nous collaborons avec plus de 200 fermes familiales, traitons le lait dans les heures suivant la collecte et maintenons les normes les plus strictes.',
+                feat1_title:'Fermes Familiales Locales',feat1_desc:'Nous travaillons directement avec plus de 200 fermes a travers le Kosovo, assurant un commerce equitable et le lait le plus frais chaque matin.',
+                feat2_title:'Qualite Certifiee',feat2_desc:'Certifie ISO 22000. Chaque lot est teste. Chaque bouteille est tracable jusqu\'a la ferme d\'origine.',
+                feat3_title:'Sans Compromis',feat3_desc:'Aucune hormone artificielle. Aucun conservateur. Juste des produits laitiers purs et naturels — comme la nature l\'a voulu.',
+                stat1:'Annees d\'Excellence',stat2:'Fermes Partenaires',stat3:'Litres Transformes par Jour',stat4:'Produits Laitiers N°1 au Kosovo',
+                recipes_tag:'INSPIRATIONS CULINAIRES',recipes_title:'Delicieuses Recettes avec Vita',recipes_sub:'Tirez le meilleur de votre cuisine avec ces recettes soigneusement choisies.',
+                rec1_title:'Pancakes Moelleux au Lait',rec1_desc:'Commencez votre matinee avec ces pancakes legers prepares avec du lait frais Vita.',rec1_tag:'Petit-dejeuner',
+                rec2_title:'Cheesecake Cremeux',rec2_desc:'Un cheesecake veloute qui fond dans la bouche, prepare avec la Creme de Cuisson Vita.',rec2_tag:'Dessert',
+                rec3_title:'Pates Alfredo',rec3_desc:'Une sauce Alfredo riche et cremeuse — le secret est la Creme a Fouetter Vita.',rec3_tag:'Diner',
+                rec4_title:'Ayran Traditionnel',rec4_desc:'Le rafraichissement parfait pour l\'ete — yaourt, eau et une pincee de sel. Simple et pur.',rec4_tag:'Boissons',
+                rec5_title:'Burek au Kos',rec5_desc:'Pate feuilletee avec du yaourt Kos riche — un classique kosovar reinvente.',rec5_tag:'Traditionnel',
+                rec6_title:'Glace Maison',rec6_desc:'Une glace cremeuse faite maison avec la Creme a Fouetter Vita et du lait frais.',rec6_tag:'Dessert',
+                test_tag:'CE QUE LES GENS DISENT',test_title:'Adore par les Familles a Travers le Kosovo',test_sub:'Ecoutez nos clients qui commencent chaque matin avec Vita sur leur table.',
+                test1_text:'"Le lait Vita fait partie du petit-dejeuner de notre famille depuis aussi longtemps que je me souvienne. La qualite ne change jamais — toujours frais, toujours cremeux. Mes enfants l\'adorent!"',test1_name:'Arlinda G.',test1_role:'Mere de 3, Pristina',
+                test2_text:'"En tant que chef, je suis pointilleux sur les produits laitiers. La Creme de Cuisson Vita est mon choix — texture constante, teneur en matiere grasse parfaite, et elle ne se separe jamais."',test2_name:'Besnik R.',test2_role:'Chef Executif, Prizren',
+                test3_text:'"Je suis passe au yaourt Vita il y a trois ans et je ne suis jamais revenu en arriere. La texture est incroyablement cremeuse."',test3_name:'Drita M.',test3_role:'Nutritionniste, Peja',
+                news_tag:'RESTEZ CONNECTE',news_title:'Recevez des Nouveautes et des Recettes Exclusives',news_sub:'Rejoignez notre newsletter pour les annonces de nouveaux produits, des recettes saisonnieres et des offres speciales.',news_ph:'Votre adresse e-mail',news_btn:'S\'abonner',
+                footer_desc:'Pensee fraiche. Produits frais. De nos fermes familiales a votre table, nous apportons les produits laitiers les plus purs du Kosovo — chaque jour.',
+                footer_prod:'PRODUITS',footer_comp:'ENTREPRISE',footer_cont:'CONTACT',
+                footer_p1:'Lait Frais',footer_p2:'Yaourt',footer_p3:'Ayran',footer_p4:'Cremes',footer_p5:'Fromage',
+                footer_c1:'A propos',footer_c2:'Carrieres',footer_c3:'Qualite',footer_c4:'Actualites',footer_c5:'Contact',
+                footer_pp:'Confidentialite',footer_ts:'Conditions',
+            }
+        };
+        // English is default (HTML content), merged for fallback
+        translations.en = {};
+
+        const allLangKeys = Object.keys(translations.sq);
+
+        function applyLang(lang) {
+            // 1. Elements with data-lkey (direct)
+            document.querySelectorAll('[data-lkey]').forEach(el => {
+                const key = el.getAttribute('data-lkey');
+                if (translations[lang] && translations[lang][key]) {
+                    if (el.children.length === 0 || (el.children.length === 1 && el.children[0].tagName === 'BR')) {
+                        el.innerHTML = translations[lang][key];
+                    }
+                }
+            });
+
+            // 2. Build English→key reverse map and walk text nodes
+            if (lang !== 'en' && translations[lang]) {
+                const enToKey = {};
+                // Fill from actual DOM English text
+                const domMap = {
+                    '.section-tag': ['products_tag','about_tag','recipes_tag','test_tag','news_tag'],
+                    '.section-title': ['products_title','about_title','recipes_title','test_title','news_title'],
+                    '.section-sub': ['products_sub','about_desc','recipes_sub','test_sub','news_sub'],
+                    '.hero-badge': ['hero_badge'],
+                    '.hero h1': ['hero_title'],
+                    '.hero p': ['hero_desc'],
+                    '.hero .btn-primary': ['hero_btn1'],
+                    '.hero .btn-outline': ['hero_btn2'],
+                    '.hero-scroll span': ['hero_scroll'],
+                    '.product-card:nth-child(1) .product-name': ['milk_name'],
+                    '.product-card:nth-child(1) .product-desc': ['milk_desc'],
+                    '.product-card:nth-child(2) .product-name': ['jogurt_name'],
+                    '.product-card:nth-child(2) .product-desc': ['jogurt_desc'],
+                    '.product-card:nth-child(3) .product-name': ['ayran_name'],
+                    '.product-card:nth-child(3) .product-desc': ['ayran_desc'],
+                    '.product-card:nth-child(4) .product-name': ['kos_name'],
+                    '.product-card:nth-child(4) .product-desc': ['kos_desc'],
+                    '.product-card:nth-child(5) .product-name': ['cook_name'],
+                    '.product-card:nth-child(5) .product-desc': ['cook_desc'],
+                    '.product-card:nth-child(6) .product-name': ['whip_name'],
+                    '.product-card:nth-child(6) .product-desc': ['whip_desc'],
+                    '.product-card:nth-child(7) .product-name': ['cheese_name'],
+                    '.product-card:nth-child(7) .product-desc': ['cheese_desc'],
+                    '.products-cta .btn': ['products_cta'],
+                    '.about-feature:nth-child(1) h4': ['feat1_title'],
+                    '.about-feature:nth-child(1) p': ['feat1_desc'],
+                    '.about-feature:nth-child(2) h4': ['feat2_title'],
+                    '.about-feature:nth-child(2) p': ['feat2_desc'],
+                    '.about-feature:nth-child(3) h4': ['feat3_title'],
+                    '.about-feature:nth-child(3) p': ['feat3_desc'],
+                    '.stat-number:nth-child(1) + .stat-label': ['stat1'], // approximate
+                    '.recipe-card:nth-child(1) h4': ['rec1_title'],
+                    '.recipe-card:nth-child(1) p': ['rec1_desc'],
+                    '.recipe-card:nth-child(1) .recipe-tag': ['rec1_tag'],
+                    '.recipe-card:nth-child(2) h4': ['rec2_title'],
+                    '.recipe-card:nth-child(2) p': ['rec2_desc'],
+                    '.recipe-card:nth-child(2) .recipe-tag': ['rec2_tag'],
+                    '.recipe-card:nth-child(3) h4': ['rec3_title'],
+                    '.recipe-card:nth-child(3) p': ['rec3_desc'],
+                    '.recipe-card:nth-child(3) .recipe-tag': ['rec3_tag'],
+                    '.recipe-card:nth-child(4) h4': ['rec4_title'],
+                    '.recipe-card:nth-child(4) p': ['rec4_desc'],
+                    '.recipe-card:nth-child(4) .recipe-tag': ['rec4_tag'],
+                    '.recipe-card:nth-child(5) h4': ['rec5_title'],
+                    '.recipe-card:nth-child(5) p': ['rec5_desc'],
+                    '.recipe-card:nth-child(5) .recipe-tag': ['rec5_tag'],
+                    '.recipe-card:nth-child(6) h4': ['rec6_title'],
+                    '.recipe-card:nth-child(6) p': ['rec6_desc'],
+                    '.recipe-card:nth-child(6) .recipe-tag': ['rec6_tag'],
+                    '.testimonial-card:nth-child(1) .testimonial-text': ['test1_text'],
+                    '.testimonial-card:nth-child(1) .author-name': ['test1_name'],
+                    '.testimonial-card:nth-child(1) .author-role': ['test1_role'],
+                    '.testimonial-card:nth-child(2) .testimonial-text': ['test2_text'],
+                    '.testimonial-card:nth-child(2) .author-name': ['test2_name'],
+                    '.testimonial-card:nth-child(2) .author-role': ['test2_role'],
+                    '.testimonial-card:nth-child(3) .testimonial-text': ['test3_text'],
+                    '.testimonial-card:nth-child(3) .author-name': ['test3_name'],
+                    '.testimonial-card:nth-child(3) .author-role': ['test3_role'],
+                    '#newsletter input': ['news_ph'],
+                    '#newsletter button': ['news_btn'],
+                    '.footer-desc': ['footer_desc'],
+                    '.footer-grid > div:nth-child(2) h5': ['footer_prod'],
+                    '.footer-grid > div:nth-child(3) h5': ['footer_comp'],
+                    '.footer-grid > div:nth-child(4) h5': ['footer_cont'],
+                    '.nav-cta.desktop': ['nav_cta'],
+                };
+
+                Object.entries(domMap).forEach(([selector, keys]) => {
+                    const elements = document.querySelectorAll(selector);
+                    elements.forEach((el, i) => {
+                        const key = Array.isArray(keys) ? keys[i] : keys;
+                        if (key && translations[lang][key]) {
+                            if (el.tagName === 'INPUT') {
+                                el.placeholder = translations[lang][key];
+                            } else {
+                                el.innerHTML = translations[lang][key];
+                            }
+                        }
+                    });
+                });
+
+                // Stats labels
+                const statLabels = document.querySelectorAll('#stats .stat-label');
+                const statKeys = ['stat1','stat2','stat3','stat4'];
+                statLabels.forEach((el, i) => {
+                    if (statKeys[i] && translations[lang][statKeys[i]]) {
+                        el.textContent = translations[lang][statKeys[i]];
+                    }
+                });
+
+                // Footer links
+                const footerPLinks = document.querySelectorAll('.footer-grid > div:nth-child(2) ul a');
+                const fpKeys = ['footer_p1','footer_p2','footer_p3','footer_p4','footer_p5'];
+                footerPLinks.forEach((a,i) => { if(fpKeys[i]&&translations[lang][fpKeys[i]]) a.textContent=translations[lang][fpKeys[i]]; });
+
+                const footerCLinks = document.querySelectorAll('.footer-grid > div:nth-child(3) ul a');
+                const fcKeys = ['footer_c1','footer_c2','footer_c3','footer_c4','footer_c5'];
+                footerCLinks.forEach((a,i) => { if(fcKeys[i]&&translations[lang][fcKeys[i]]) a.textContent=translations[lang][fcKeys[i]]; });
+
+                // Footer bottom links
+                const pp = document.querySelector('.footer-bottom a:first-of-type');
+                const ts = document.querySelector('.footer-bottom a:last-of-type');
+                if (pp && translations[lang].footer_pp) pp.textContent = translations[lang].footer_pp;
+                if (ts && translations[lang].footer_ts) ts.textContent = translations[lang].footer_ts;
+            }
+
+            // 3. Update dropdown active states
+            document.querySelectorAll('.lang-dropdown li').forEach(li => {
+                li.classList.toggle('active', li.getAttribute('data-lang') === lang);
+            });
+
+            // 4. Update button labels
+            const labels = {sq:'SQ',en:'EN',de:'DE',fr:'FR'};
+            document.querySelectorAll('#langLabel, #langLabelDesktop').forEach(s => s.textContent = labels[lang] || lang.toUpperCase());
+
+            localStorage.setItem('vita-lang', lang);
+        }
+
+        // Language dropdown toggle
+        function setupLangDropdown(btnId, dropdownId) {
+            const btn = document.getElementById(btnId);
+            const dropdown = document.getElementById(dropdownId);
+            if (!btn || !dropdown) return;
+            btn.addEventListener('click', e => { e.stopPropagation(); dropdown.classList.toggle('open'); });
+            dropdown.querySelectorAll('li').forEach(li => {
+                li.addEventListener('click', e => {
+                    e.stopPropagation();
+                    applyLang(li.getAttribute('data-lang'));
+                    dropdown.classList.remove('open');
+                });
+            });
+        }
+        setupLangDropdown('langBtn', 'langDropdown');
+        setupLangDropdown('langBtnDesktop', 'langDropdownDesktop');
+
+        // Close dropdowns on outside click
+        document.addEventListener('click', () => {
+            document.querySelectorAll('.lang-dropdown').forEach(d => d.classList.remove('open'));
+        });
+
+        // Init language from localStorage
+        const savedLang = localStorage.getItem('vita-lang') || 'sq';
+        applyLang(savedLang);
 
         // ── Smooth link scroll ────────────
         document.querySelectorAll('a[href^="#"]').forEach(anchor => {
