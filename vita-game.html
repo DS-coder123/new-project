@@ -75,6 +75,12 @@ function drawParticles(cx, cy) {
     ctx.globalAlpha = 1;
 }
 
+// Collectible images
+var imgMilk=new Image(),imgYogurt=new Image(),imgCheese=new Image(),imgButter=new Image(),imgAyran=new Image();
+imgMilk.src='New folder/qumesht-new.webp';imgYogurt.src='New folder/jogurt.webp';
+imgCheese.src='New folder/djath vita.png';imgButter.src='New folder/whipping cream.webp';
+imgAyran.src='New folder/ayran.webp';
+
 // Levels
 var LEVELS = [
     {name:'Green Farm',bgTop:'#87CEEB',bgBot:'#90EE90',truckX:2650,levelW:2700,timeLimit:120,bgTrees:8,bgClouds:6,
@@ -321,13 +327,16 @@ function drawPlayer(cx,cy){
 }
 
 function drawCollectibles(cx,cy){
-    for(var i=0;i<collectibles.length;i++){var c=collectibles[i];if(!c.active)continue;var cpx=c.x-cx,cpy=c.y-cy+Math.sin(Date.now()/500+c.bob)*5;if(cpx<-30||cpx>W+30)continue;
-        var sp=Math.sin(Date.now()/200+c.bob)*0.4+0.6;ctx.fillStyle=c.color;ctx.globalAlpha=sp;
-        if(c.s==='M'){ctx.fillRect(cpx,cpy+6,22,20);ctx.fillStyle='#fff';ctx.fillRect(cpx+2,cpy+2,18,8);}
-        else if(c.s==='Y'){ctx.beginPath();ctx.arc(cpx+12,cpy+14,12,0,Math.PI*2);ctx.fill();}
-        else if(c.s==='C'){ctx.beginPath();ctx.moveTo(cpx,cpy+22);ctx.lineTo(cpx+22,cpy+22);ctx.lineTo(cpx+22,cpy);ctx.fill();}
-        else if(c.s==='B')ctx.fillRect(cpx+2,cpy+4,20,18);
-        else if(c.s==='A'){ctx.fillRect(cpx+6,cpy,12,22);ctx.fillRect(cpx+4,cpy+22,16,4);}
+    for(var i=0;i<collectibles.length;i++){var c=collectibles[i];if(!c.active)continue;var cpx=c.x-cx,cpy=c.y-cy+Math.sin(Date.now()/500+c.bob)*5;if(cpx<-40||cpx>W+40)continue;
+        var sp=Math.sin(Date.now()/200+c.bob)*0.4+0.6;ctx.globalAlpha=sp;
+        var img=null;
+        if(c.s==='M')img=imgMilk;
+        else if(c.s==='Y')img=imgYogurt;
+        else if(c.s==='C')img=imgCheese;
+        else if(c.s==='B')img=imgButter;
+        else if(c.s==='A')img=imgAyran;
+        if(img&&img.complete&&img.naturalWidth>0)ctx.drawImage(img,cpx-4,cpy-4,36,36);
+        else{ctx.fillStyle=c.color;ctx.fillRect(cpx+4,cpy+6,20,18);}
     }ctx.globalAlpha=1;
 }
 
