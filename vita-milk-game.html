@@ -35,6 +35,10 @@ var bgLoaded=false;
 bgImg.onload=function(){ bgLoaded=true; startSplash(); };
 bgImg.onerror=function(){ bgLoaded=true; startSplash(); };
 bgImg.src='https://th.bing.com/th/id/OIP.tAw5md2d7zwNhNZDFa59PQHaEo?w=1200&h=800';
+
+// Vita logo image for splash
+var vitaLogo=new Image(); vitaLogo.crossOrigin='anonymous';
+vitaLogo.src='https://tse1.mm.bing.net/th/id/OIP.HehvJ6TAtvMRgOf6FR0EyQHaHa?r=0&rs=1&pid=ImgDetMain&o=7&rm=3';
 function startSplash(){
   document.getElementById('loading').classList.add('done');
   if(!splashStarted){ splashStarted=true; splashPhase=1; splashTimer=0; }
