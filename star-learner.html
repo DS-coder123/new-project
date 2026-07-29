@@ -88,7 +88,7 @@
     position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
     z-index: 10; color: rgba(255,255,255,0.45); font-size: 0.8rem;
     text-align: center; pointer-events: none;
-    transition: opacity 2s;
+    transition: opacity 0.5s;
   }
 </style>
 </head>
@@ -241,7 +241,7 @@ function initStars() {
       y: (Math.random() - 0.5) * canvas.height * 3,
       size: Math.random() * 1.8 + 0.3,
       twinkle: Math.random() * Math.PI * 2,
-      twinkleSpeed: Math.random() * 0.03 + 0.005,
+      twinkleSpeed: Math.random() * 0.05 + 0.01,
       brightness: Math.random() * 0.5 + 0.5,
     });
   }
@@ -481,9 +481,9 @@ function update() {
   if (quizActive || victory) return;
 
   // Ship movement
-  const accel = 0.18;
+  const accel = 0.25;
   const friction = 0.96;
-  const maxSpeed = 5;
+  const maxSpeed = 7;
 
   if (keys['w'] || keys['arrowup'])    { ship.vx += Math.cos(ship.angle) * accel; ship.vy += Math.sin(ship.angle) * accel; }
   if (keys['s'] || keys['arrowdown'])  { ship.vx -= Math.cos(ship.angle) * accel * 0.5; ship.vy -= Math.sin(ship.angle) * accel * 0.5; }

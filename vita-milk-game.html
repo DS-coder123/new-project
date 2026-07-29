@@ -7,10 +7,10 @@
 <style>
   :root { --gold: #F2C200; --navy: #134B8D; }
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:#000; overflow:hidden; font-family:'Segoe UI',system-ui,sans-serif; }
-  canvas { display:block; margin:0 auto; }
+  body { background:#000; overflow:hidden; font-family:'Segoe UI',system-ui,sans-serif; width:100vw; height:100vh; }
+  canvas { display:block; position:fixed; top:0; left:0; width:100%; height:100%; }
   #loading { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
-    color:#fff; font-size:1.2rem; z-index:100; pointer-events:none; transition:opacity 0.4s; }
+    color:#fff; font-size:1.2rem; z-index:100; pointer-events:none; transition:opacity 0.2s; }
   #loading.done { opacity:0; }
 </style>
 </head>
@@ -24,7 +24,7 @@ var GOLD='#F2C200', NAVY='#134B8D';
 var W,H;
 
 function resize(){
-  W=Math.min(window.innerWidth,960); H=Math.min(window.innerHeight,640);
+  W=window.innerWidth; H=window.innerHeight;
   c.width=W; c.height=H; c.style.width=W+'px'; c.style.height=H+'px';
 }
 window.addEventListener('resize',resize); resize();
@@ -44,7 +44,7 @@ function startSplash(){
 var stage=0, stageDone=[false,false,false,false,false];
 var transitionAlpha=0, transitionText='';
 // Splash animation
-var splashPhase=0;      // 0=wait for load, 1=milk flowing, 2=reveal text, 3=hold, 4=fade out
+var splashPhase=0;      // 0=wait, 1=milk flowing, 2=milk settled, 3=text reveal, 4=hold text, 5=fade out
 var splashTimer=0;
 var splashStarted=false;
 
@@ -80,13 +80,13 @@ c.addEventListener('mousemove',function(e){
 });
 c.addEventListener('mousedown',function(e){
   mouse.down=true; mouse.clicked=true;
-  if(splashPhase>0&&splashPhase<5) skipSplash();
+  if(splashPhase>0&&splashPhase<6) skipSplash();
   e.preventDefault();
 });
 c.addEventListener('mouseup',function(){ mouse.down=false; s1_isMilking=false; });
 c.addEventListener('touchstart',function(e){
   e.preventDefault();
-  if(splashPhase>0&&splashPhase<5){ skipSplash(); return; }
+  if(splashPhase>0&&splashPhase<6){ skipSplash(); return; }
   var r=c.getBoundingClientRect();
   mouse.x=e.touches[0].clientX-r.left; mouse.y=e.touches[0].clientY-r.top;
   mouse.down=true; mouse.clicked=true;
@@ -100,7 +100,7 @@ c.addEventListener('touchend',function(){ mouse.down=false; s1_isMilking=false; 
 window.addEventListener('keydown',function(e){
   keys[e.key.toLowerCase()]=true;
   if(e.key===' '||e.key==='Enter'){
-    if(splashPhase>0&&splashPhase<5){ skipSplash(); }
+    if(splashPhase>0&&splashPhase<6){ skipSplash(); }
     else if(stage===0){ startTransition('Walking to the barn...',1); }
     else if(stage===1){ s1_isMilking=true; }
     else if(stage===2&&s2_current){ s2_total++;s2_score++;s2_feedback='✓ Good!';s2_fbTimer=50;genSample(); }
@@ -163,7 +163,7 @@ function fillClosestBottle(){
 function startTransition(text,next){
   transitionAlpha=0; transitionText=text;
   setTimeout(function(){ transitionAlpha=1; },40);
-  setTimeout(function(){ stage=next; initStage(next); setTimeout(function(){ transitionAlpha=0; },350); },1300);
+  setTimeout(function(){ stage=next; initStage(next); setTimeout(function(){ transitionAlpha=0; },250); },900);
 }
 function initStage(n){
   if(n===1){ s1_clicks=0;s1_pailFill=0;s1_streams=[];s1_splashes=[];s1_isMilking=false; }
@@ -397,7 +397,7 @@ function drawStage2(){
   ctx.fillText('Is the milk clean? [Click ✓/✗ or SPACE=Good]',W/2,100);
 
   if(s2_current){
-    s2_current.alpha=Math.min(1,s2_current.alpha+0.06);var a=s2_current.alpha;
+    s2_current.alpha=Math.min(1,s2_current.alpha+0.1);var a=s2_current.alpha;
     var sx=W/2,sy=H*0.55;
     ctx.fillStyle='rgba(255,255,255,0.06)';
     ctx.beginPath();ctx.moveTo(sx-22,sy+35);ctx.lineTo(sx-28,sy-25);ctx.lineTo(sx+28,sy-25);ctx.lineTo(sx+22,sy+35);ctx.closePath();ctx.fill();
@@ -527,7 +527,7 @@ function drawStage5(){
 
   ctx.fillStyle='#1a1a1a';ctx.fillRect(0,H*0.44,W,70);
   ctx.strokeStyle='#333';for(var x=(Date.now()/18)%40-40;x<W;x+=40){ctx.beginPath();ctx.moveTo(x,H*0.44+35);ctx.lineTo(x+20,H*0.44+70);ctx.stroke();}
-  s5_timer++;if(s5_timer>55-s5_filled*2.5&&s5_filled<s5_target){s5_timer=0;s5_bottles.push({x:W+30,y:H*0.46+(Math.random()-0.5)*35,filled:false,speed:1.6+Math.random()*0.9});}
+  s5_timer++;if(s5_timer>40-s5_filled*2&&s5_filled<s5_target){s5_timer=0;s5_bottles.push({x:W+30,y:H*0.46+(Math.random()-0.5)*35,filled:false,speed:2.2+Math.random()*1.2});}
   for(var i=s5_bottles.length-1;i>=0;i--){var b=s5_bottles[i];b.x-=b.speed;if(b.x<-70){s5_bottles.splice(i,1);continue;}
     if(!b.filled){ctx.fillStyle='rgba(255,255,255,0.08)';ctx.beginPath();ctx.moveTo(b.x-18,b.y-30);ctx.lineTo(b.x-22,b.y+32);ctx.lineTo(b.x+22,b.y+32);ctx.lineTo(b.x+18,b.y-30);ctx.closePath();ctx.fill();
       ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=1.5;ctx.stroke();ctx.fillStyle=GOLD;rrect(b.x-20,b.y-40,40,11,4);ctx.fill();
@@ -561,45 +561,47 @@ function drawVictory(){
   var repH=drawButton(W/2-70,H*0.93,140,44,'PLAY AGAIN',GOLD);if(repH&&mouse.clicked)location.reload();
 }
 
-// === SPLASH ANIMATION (milk reveal VITA) ===
+// === SPLASH ANIMATION (milk fills, then VITA revealed) ===
 function drawSplash(){
-  // Phases: 1=milk flowing left→right, 2=text reveal, 3=hold, 4=fade out
+  // Phases: 1=milk flowing, 2=s settled, 3=text reveal, 4=hold text, 5=fade out
   if(splashPhase===1){
-    splashTimer+=0.012;
+    splashTimer+=0.07;
     if(splashTimer>=1){ splashPhase=2; splashTimer=0; }
   } else if(splashPhase===2){
-    splashTimer+=0.008;
+    splashTimer+=0.08;
     if(splashTimer>=1){ splashPhase=3; splashTimer=0; }
   } else if(splashPhase===3){
-    splashTimer+=1/60;
-    if(splashTimer>=1.2){ splashPhase=4; splashTimer=0; }
+    splashTimer+=0.1;
+    if(splashTimer>=1){ splashPhase=4; splashTimer=0; }
   } else if(splashPhase===4){
-    splashTimer+=0.025;
-    if(splashTimer>=1){ splashPhase=5; } // done
+    splashTimer+=0.07;
+    if(splashTimer>=1){ splashPhase=5; splashTimer=0; }
+  } else if(splashPhase===5){
+    splashTimer+=0.15;
+    if(splashTimer>=1){ splashPhase=6; } // done
   }
 
   // Background: dark navy
   ctx.fillStyle='#050a14';ctx.fillRect(0,0,W,H);
 
-  if(splashPhase>=4){
-    // Fade out everything
+  if(splashPhase>=5){
     var fadeAlpha=1-splashTimer;
     ctx.globalAlpha=fadeAlpha;
   }
 
-  // Milk wave: progresses left to right
+  // Milk wave progresses left to right (phase 1 only)
   var waveProgress=splashPhase===1?splashTimer:1;
-  var textAlpha=splashPhase>=2?Math.min(1,splashPhase===2?splashTimer:1):0;
+  // Text only appears from phase 3 onward (AFTER milk has settled)
+  var textAlpha=splashPhase>=3?Math.min(1,splashPhase===3?splashTimer:1):0;
 
   // Milk pool - fills from left
   var milkRight=W*waveProgress;
-  var milkTop=H*0.38;
+  var milkTop=0;
 
   // Main milk body
   ctx.fillStyle='rgba(255,255,255,0.92)';
   ctx.beginPath();
   ctx.moveTo(0,milkTop);
-  // Wavy top edge
   for(var x=0;x<=milkRight;x+=4){
     var wy=milkTop+Math.sin(x*0.04+Date.now()*0.004)*6+Math.sin(x*0.08+Date.now()*0.006)*3;
     ctx.lineTo(x,wy);
@@ -619,44 +621,40 @@ function drawSplash(){
   ctx.lineTo(0,milkTop-10);
   ctx.closePath();ctx.fill();
 
-  // VITA text revealed by milk
+  // VITA text revealed by milk (only AFTER milk fully fills screen)
   if(textAlpha>0){
     ctx.save();
-    // Clip to milk region
-    ctx.beginPath();ctx.rect(0,milkTop,milkRight,H-milkTop);ctx.clip();
+    ctx.beginPath();ctx.rect(0,milkTop,W,H-milkTop);ctx.clip();
 
-    // Glow behind text
-    var glowGrad=ctx.createRadialGradient(W/2,H*0.55,20,W/2,H*0.55,W*0.6);
+    var glowGrad=ctx.createRadialGradient(W/2,H*0.52,20,W/2,H*0.52,W*0.6);
     glowGrad.addColorStop(0,'rgba(19,75,141,'+(0.5*textAlpha)+')');
     glowGrad.addColorStop(0.5,'rgba(19,75,141,'+(0.2*textAlpha)+')');
     glowGrad.addColorStop(1,'transparent');
     ctx.fillStyle=glowGrad;ctx.fillRect(0,milkTop,W,H-milkTop);
 
-    // Main VITA text
+    var fs=Math.min(W*0.094, H*0.14);
     ctx.fillStyle='rgba(19,75,141,'+textAlpha+')';
-    ctx.font='bold 90px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-    ctx.fillText('VITA',W/2,H*0.62);
+    ctx.font='bold '+fs+'px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+    ctx.fillText('VITA',W/2,H*0.58);
 
-    // Text outline for crispness
     ctx.strokeStyle='rgba(8,45,85,'+(textAlpha*0.5)+')';ctx.lineWidth=3;
-    ctx.strokeText('VITA',W/2,H*0.62);
+    ctx.strokeText('VITA',W/2,H*0.58);
 
-    // Subtitle
+    var sfs=Math.min(W*0.024, H*0.035);
     ctx.fillStyle='rgba(242,194,0,'+(textAlpha*0.9)+')';
-    ctx.font='bold 18px "Segoe UI",system-ui,sans-serif';
-    ctx.fillText('FRESH DAIRY · FROM FARM TO FRIDGE',W/2,H*0.72);
+    ctx.font='bold '+sfs+'px "Segoe UI",system-ui,sans-serif';
+    ctx.fillText('FRESH DAIRY · FROM FARM TO FRIDGE',W/2,H*0.70);
 
     ctx.restore();
   }
 
-  // Milk drips on right edge
+  // Milk drips on right edge while still flowing
   if(waveProgress<1){
     var dripX=milkRight;
     ctx.fillStyle='rgba(255,255,255,0.7)';
     for(var i=0;i<3;i++){
       var dy=milkTop+60+i*50+Math.sin(Date.now()*0.01+i)*8;
       ctx.beginPath();ctx.arc(dripX,dy,5+i*2,0,Math.PI*2);ctx.fill();
-      // Drip stream
       ctx.fillStyle='rgba(255,255,255,0.3)';
       ctx.fillRect(dripX-2,dy,H*0.03,12+i*8);
       ctx.fillStyle='rgba(255,255,255,0.7)';
@@ -665,23 +663,23 @@ function drawSplash(){
 
   ctx.globalAlpha=1;
 
-  // Skip hint after hold phase
-  if(splashPhase===3&&splashTimer>0.6){
+  // Skip hint during hold
+  if(splashPhase===4&&splashTimer>0.3){
     ctx.fillStyle='rgba(255,255,255,'+(0.3+Math.sin(Date.now()*0.005)*0.2)+')';
-    ctx.font='12px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+    ctx.font='13px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
     ctx.fillText('Press SPACE or click to skip',W/2,H*0.85);
   }
 }
 
 // Skip splash on click/space
 function skipSplash(){
-  if(splashPhase>0&&splashPhase<5){ splashPhase=5; }
+  if(splashPhase>0&&splashPhase<6){ splashPhase=6; }
 }
 function draw(){
   ctx.clearRect(0,0,W,H);
 
   // Splash animation overlay
-  if(splashPhase>0&&splashPhase<5){
+  if(splashPhase>0&&splashPhase<6){
     drawSplash();
     mouse.clicked=false;
     return;
@@ -702,7 +700,7 @@ function draw(){
     if(p.life<=0){particles.splice(i,1);continue;}
     ctx.fillStyle=p.color+Math.floor(p.life*255).toString(16).padStart(2,'0');ctx.beginPath();ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);ctx.fill();}
 
-  if(transitionAlpha>0.01&&stage!==6){transitionAlpha+=0.012;
+  if(transitionAlpha>0.01&&stage!==6){transitionAlpha+=0.025;
     ctx.fillStyle='rgba(0,0,0,'+Math.min(1,transitionAlpha)+')';ctx.fillRect(0,0,W,H);
     ctx.fillStyle=GOLD;ctx.font='bold 20px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';ctx.fillText(transitionText,W/2,H/2);}
 
