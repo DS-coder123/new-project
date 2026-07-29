@@ -9,709 +9,435 @@
   * { margin:0; padding:0; box-sizing:border-box; }
   body { background:#000; overflow:hidden; font-family:'Segoe UI',system-ui,sans-serif; width:100vw; height:100vh; }
   canvas { display:block; position:fixed; top:0; left:0; width:100%; height:100%; }
-  #loading { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
-    color:#fff; font-size:1.2rem; z-index:100; pointer-events:none; transition:opacity 0.2s; }
-  #loading.done { opacity:0; }
 </style>
 </head>
 <body>
-<div id="loading">Loading farm...</div>
 <canvas id="c"></canvas>
 <script>
 (function(){
 var c=document.getElementById('c'), ctx=c.getContext('2d');
 var GOLD='#F2C200', NAVY='#134B8D';
 var W,H;
-
-function resize(){
-  W=window.innerWidth; H=window.innerHeight;
-  c.width=W; c.height=H; c.style.width=W+'px'; c.style.height=H+'px';
-}
+function resize(){ W=window.innerWidth; H=window.innerHeight; c.width=W; c.height=H; c.style.width=W+'px'; c.style.height=H+'px'; }
 window.addEventListener('resize',resize); resize();
 
-// === LOAD IMAGES ===
-var bgImg=new Image(); bgImg.crossOrigin='anonymous';
-var bgLoaded=false;
-bgImg.onload=function(){ bgLoaded=true; startSplash(); };
-bgImg.onerror=function(){ bgLoaded=true; startSplash(); };
-bgImg.src='https://th.bing.com/th/id/OIP.tAw5md2d7zwNhNZDFa59PQHaEo?w=1200&h=800';
+// Farm background
+var farmBg=new Image(); farmBg.crossOrigin='anonymous';
+farmBg.src='https://th.bing.com/th/id/R.13820971a962ffbeb63a8fef36185b16?rik=NQSf0Tk1%2f7h9pg&pid=ImgRaw&r=0';
 
-// Vita logo image for splash
-var vitaLogo=new Image(); vitaLogo.crossOrigin='anonymous';
-vitaLogo.src='https://tse1.mm.bing.net/th/id/OIP.HehvJ6TAtvMRgOf6FR0EyQHaHa?r=0&rs=1&pid=ImgDetMain&o=7&rm=3';
-function startSplash(){
-  document.getElementById('loading').classList.add('done');
-  if(!splashStarted){ splashStarted=true; splashPhase=1; splashTimer=0; }
-}
+// Cow image for stage 0 & 1
+var cowImg=new Image(); cowImg.crossOrigin='anonymous';
+cowImg.src='https://th.bing.com/th/id/R.4cc18d9e95b51c4233e2ebc4a95c1277?rik=0OIl%2bUlxQJVWHg&pid=ImgRaw&r=0';
 
-// === STATE ===
-var stage=0, stageDone=[false,false,false,false,false];
-var transitionAlpha=0, transitionText='';
-// Splash animation
-var splashPhase=0;      // 0=wait, 1=milk flowing, 2=milk settled, 3=text reveal, 4=hold text, 5=fade out
-var splashTimer=0;
-var splashStarted=false;
-
-// --- Stage 1: Milking ---
-var s1_clicks=0, s1_target=5;
-var s1_pailFill=0;       // 0-1 animation for pail fill level
-var s1_streams=[];        // active milk streams
-var s1_splashes=[];       // splash particles in pail
-var s1_isMilking=false;   // currently pulling milk
-
-// --- Stage 2: Quality ---
-var s2_samples=[], s2_score=0, s2_total=0, s2_current=null, s2_feedback='', s2_fbTimer=0, s2_timer=0;
-
-// --- Stage 3: Pasteurization ---
-var s3_temp=38, s3_zoneTime=0, s3_targetSec=12, s3_heatOn=false, s3_coolOn=false;
-
-// --- Stage 4: Separator ---
-var s4_tilt=0, s4_drops=[], s4_collected=0, s4_target=15;
-
-// --- Stage 5: Bottling ---
-var s5_bottles=[], s5_filled=0, s5_target=10, s5_timer=0;
-
-// --- Particles ---
+var stage=0, stageDone=[], totalStages=9;
+var transitionAlpha=0, transitionText='', stageTimer=0;
+var keys={};
+var mouse={x:0,y:0,down:false,clicked:false};
 var particles=[];
 
-// === INPUT ===
-var mouse={x:0,y:0,down:false,clicked:false};
-var keys={};
+// Stage-specific state
+var s1_fed=0, s1_target=5, s1_cows=[];
+var s2_milk=0, s2_target=8, s2_streaming=false;
+var s3_x=0, s3_obstacles=[], s3_score=0, s3_target=8;
+var s4_samples=[], s4_correct=0, s4_total=0, s4_target=8;
+var s5_temp=38, s5_zoneTime=0, s5_targetSec=8, s5_heat=false, s5_cool=false;
+var s6_globules=[], s6_popped=0, s6_target=12;
+var s7_bottles=[], s7_filled=0, s7_target=10;
+var s8_boxes=[], s8_bottles=[], s8_packed=0, s8_target=6, s8_drag=null;
+var s9_truckX=0, s9_houses=[], s9_delivered=0, s9_target=6;
 
-c.addEventListener('mousemove',function(e){
-  var r=c.getBoundingClientRect();
-  mouse.x=e.clientX-r.left; mouse.y=e.clientY-r.top;
-});
-c.addEventListener('mousedown',function(e){
-  mouse.down=true; mouse.clicked=true;
-  if(splashPhase>0&&splashPhase<6) skipSplash();
-  e.preventDefault();
-});
-c.addEventListener('mouseup',function(){ mouse.down=false; s1_isMilking=false; });
-c.addEventListener('touchstart',function(e){
-  e.preventDefault();
-  if(splashPhase>0&&splashPhase<6){ skipSplash(); return; }
-  var r=c.getBoundingClientRect();
-  mouse.x=e.touches[0].clientX-r.left; mouse.y=e.touches[0].clientY-r.top;
-  mouse.down=true; mouse.clicked=true;
-},{passive:false});
-c.addEventListener('touchmove',function(e){
-  e.preventDefault(); var r=c.getBoundingClientRect();
-  mouse.x=e.touches[0].clientX-r.left; mouse.y=e.touches[0].clientY-r.top;
-},{passive:false});
-c.addEventListener('touchend',function(){ mouse.down=false; s1_isMilking=false; });
-
-window.addEventListener('keydown',function(e){
-  keys[e.key.toLowerCase()]=true;
-  if(e.key===' '||e.key==='Enter'){
-    if(splashPhase>0&&splashPhase<6){ skipSplash(); }
-    else if(stage===0){ startTransition('Walking to the barn...',1); }
-    else if(stage===1){ s1_isMilking=true; }
-    else if(stage===2&&s2_current){ s2_total++;s2_score++;s2_feedback='✓ Good!';s2_fbTimer=50;genSample(); }
-    else if(stage===5){ fillClosestBottle(); }
-  }
-  if(e.key===' '||e.key==='Enter') e.preventDefault();
-});
-window.addEventListener('keyup',function(e){
-  keys[e.key.toLowerCase()]=false;
-  if(e.key===' '||e.key==='Enter'){ s1_isMilking=false; }
-});
+// Input
+c.addEventListener('mousemove',function(e){ var r=c.getBoundingClientRect(); mouse.x=e.clientX-r.left; mouse.y=e.clientY-r.top; });
+c.addEventListener('mousedown',function(e){ mouse.down=true; mouse.clicked=true; e.preventDefault(); });
+c.addEventListener('mouseup',function(){ mouse.down=false; s2_streaming=false; if(s8_drag){ var b=s8_drag; for(var i=0;i<s8_boxes.length;i++){ var bx=s8_boxes[i]; if(!bx.full&&Math.abs(b.x-bx.x)<50&&Math.abs(b.y-bx.y)<50&&Math.abs(b.x-bx.x)<60&&Math.abs(b.y-bx.y)<60){ bx.full=true; s8_packed++; particles.push({x:bx.x+30,y:bx.y+30,vx:0,vy:-3,life:1,decay:0.04,color:GOLD,size:5}); break; }} s8_drag=null; }});
+c.addEventListener('touchstart',function(e){ e.preventDefault(); var r=c.getBoundingClientRect(); mouse.x=e.touches[0].clientX-r.left; mouse.y=e.touches[0].clientY-r.top; mouse.down=true; mouse.clicked=true; });
+c.addEventListener('touchmove',function(e){ e.preventDefault(); var r=c.getBoundingClientRect(); mouse.x=e.touches[0].clientX-r.left; mouse.y=e.touches[0].clientY-r.top; });
+c.addEventListener('touchend',function(){ mouse.down=false; s2_streaming=false; s8_drag=null; });
+window.addEventListener('keydown',function(e){ keys[e.key.toLowerCase()]=true; if(e.key===' '||e.key==='Enter'){ e.preventDefault(); if(stage===1&&s1_fed<s1_target) s1_fed++; if(stage===4&&s4_samples.length>0) judgeSample(true); if(stage===7) fillBottle(); }});
 window.addEventListener('keyup',function(e){ keys[e.key.toLowerCase()]=false; });
 
-// === MILK STREAM SYSTEM ===
-function startMilkStream() {
-  var ur=getUdderRect();
-  // 2 streams from the udder (like real teats)
-  for(var i=0;i<2;i++){
-    s1_streams.push({
-      sx: ur.x + ur.w*(0.3 + i*0.4),
-      sy: ur.y + ur.h - 2,
-      tx: W*0.78 + (i-0.5)*14,  // target: center of pail
-      ty: H*0.66,
-      life: 0,
-      maxLife: 25 + Math.random()*10,
-      width: 3 + Math.random()*2,
-      speed: 0.04 + Math.random()*0.02
-    });
-  }
+// Helpers
+function rrect(x,y,w,h,r){ ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath(); }
+function btn(x,y,w,h,txt,clr){
+  var h=mouse.x>x&&mouse.x<x+w&&mouse.y>y&&mouse.y<y+h;
+  rrect(x,y,w,h,14); ctx.fillStyle=h?'#ffd633':clr; ctx.fill();
+  ctx.fillStyle=clr===GOLD?'#000':'#fff'; ctx.font='bold 14px "Segoe UI",system-ui,sans-serif'; ctx.textAlign='center'; ctx.fillText(txt,x+w/2,y+h/2+5);
+  return h&&mouse.clicked;
 }
-
-function spawnSplash(tx, ty) {
-  for(var i=0;i<3;i++){
-    s1_splashes.push({
-      x: tx + (Math.random()-0.5)*20,
-      y: ty - Math.random()*6,
-      vx: (Math.random()-0.5)*2,
-      vy: -1-Math.random()*3,
-      life: 1, decay: 0.04+Math.random()*0.03,
-      size: 1.5+Math.random()*2.5
-    });
-  }
+function drawHUD(){
+  ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(0,0,W,42);
+  ctx.fillStyle='#fff';ctx.font='bold 14px "Segoe UI",system-ui,sans-serif';ctx.textAlign='left';ctx.fillText('VITA',14,29);
+  ctx.fillStyle=GOLD;ctx.font='bold 14px "Segoe UI",system-ui,sans-serif';ctx.fillText('STAGE '+stage+'/'+totalStages,54,29);
 }
-
-// === STAGE 2: generate sample ===
-function genSample(){ s2_current={good:Math.random()>0.3,alpha:0}; s2_timer=140; }
-
-// === STAGE 5: fill closest bottle ===
-function fillClosestBottle(){
-  var best=null,bestD=Infinity;
-  for(var i=0;i<s5_bottles.length;i++){
-    var b=s5_bottles[i]; if(!b.filled&&b.x>0&&b.x<W){ var d=Math.abs(b.x-W/2); if(d<bestD){best=b;bestD=d;} }
-  }
-  if(best){ best.filled=true; s5_filled++;
-    particles.push({x:best.x,y:best.y+10,vx:(Math.random()-0.5)*3,vy:-3-Math.random()*3,life:1,decay:0.035,color:GOLD,size:4});
-  }
-}
-
-// === TRANSITIONS ===
-function startTransition(text,next){
-  transitionAlpha=0; transitionText=text;
-  setTimeout(function(){ transitionAlpha=1; },40);
-  setTimeout(function(){ stage=next; initStage(next); setTimeout(function(){ transitionAlpha=0; },250); },900);
-}
-function initStage(n){
-  if(n===1){ s1_clicks=0;s1_pailFill=0;s1_streams=[];s1_splashes=[];s1_isMilking=false; }
-  if(n===2){ s2_samples=[];s2_score=0;s2_total=0;s2_current=null;s2_feedback='';s2_fbTimer=0;genSample(); }
-  if(n===3){ s3_temp=38;s3_zoneTime=0;s3_heatOn=false;s3_coolOn=false; }
-  if(n===4){ s4_tilt=0;s4_drops=[];s4_collected=0; }
-  if(n===5){ s5_bottles=[];s5_filled=0;s5_timer=0; }
-  particles=[];
+function startTransition(txt,nxt){
+  transitionAlpha=0; transitionText=txt;
+  setTimeout(function(){ transitionAlpha=1; },30);
+  setTimeout(function(){ stage=nxt; initStage(nxt); setTimeout(function(){ transitionAlpha=0; },200); },700);
 }
 function completeStage(n){
-  stageDone[n-1]=true;
-  if(n===5) startTransition('Fresh Vita milk — ready!',6);
-  else { var msgs=['Milk collected! → Quality Lab','Quality passed! → Pasteurization','Pasteurized! → Separator','Processed! → Bottling'];
-    startTransition(msgs[n-1],n+1); }
+  stageDone[n]=true; stageTimer=0;
+  var msgs=['Cow fed! → Milking','Milk collected! → Transport','Delivered! → Testing','Tests passed! → Pasteurization','Pasteurized! → Homogenization','Homogenized! → Bottling','Bottles filled! → Packing','Boxes packed! → Delivery','All delivered! '];
+  if(n>=totalStages-1) startTransition(msgs[n],totalStages);
+  else startTransition(msgs[n],n+1);
 }
+function initStage(n){
+  particles=[]; stageTimer=0;
+  if(n===0){
+    s1_fed=0; s1_cows=[]; for(var i=0;i<3;i++) s1_cows.push({x:W*0.15+i*W*0.28,y:H*0.45,w:W*0.22,h:H*0.25});
+  }
+  if(n===1){ s2_milk=0; s2_streaming=false; }
+  if(n===2){ s3_x=W*0.15; s3_obstacles=[]; s3_score=0; for(var i=0;i<8;i++) s3_obstacles.push({x:W+i*W*0.2,y:H*0.6+Math.random()*60,r:12+Math.random()*10}); }
+  if(n===3){ s4_samples=[]; s4_correct=0; s4_total=0; genSample(); }
+  if(n===4){ s5_temp=38; s5_zoneTime=0; s5_heat=false; s5_cool=false; }
+  if(n===5){ s6_globules=[]; s6_popped=0; for(var i=0;i<s6_target;i++) s6_globules.push({x:W*0.1+Math.random()*W*0.6,y:H*0.3+Math.random()*H*0.35,r:15+Math.random()*12,vx:(Math.random()-0.5)*1.2,vy:(Math.random()-0.5)*0.8}); }
+  if(n===6){ s7_bottles=[]; s7_filled=0; }
+  if(n===7){ s8_boxes=[]; s8_bottles=[]; s8_packed=0; for(var i=0;i<3;i++){ s8_boxes.push({x:W*0.1+i*W*0.3,y:H*0.65,w:80,h:60,full:false}); } for(var i=0;i<s8_target;i++) s8_bottles.push({x:W*0.05+Math.random()*W*0.5,y:H*0.35+Math.random()*H*0.2,filled:true}); }
+  if(n===8){ s9_truckX=W*0.1; s9_houses=[]; s9_delivered=0; for(var i=0;i<s9_target;i++) s9_houses.push({x:W*0.2+(i+1)*W*0.12,y:H*0.4,r:22+Math.random()*8}); }
+}
+function genSample(){ s4_samples.push({good:Math.random()>0.35,alpha:0}); }
 
-// ========== DRAWING HELPERS ==========
-function rrect(x,y,w,h,r){
-  ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);
-  ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);
-  ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);
-  ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);
-  ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();
+function fillBottle(){
+  for(var i=0;i<s7_bottles.length;i++){ var b=s7_bottles[i]; if(!b.filled&&b.x>0&&b.x<W){ var d=Math.abs(b.x-W/2); if(d<60){ b.filled=true; s7_filled++; particles.push({x:b.x,y:b.y,vx:(Math.random()-0.5)*4,vy:-4,life:1,decay:0.04,color:GOLD,size:4}); return; }}}
 }
-function drawButton(x,y,w,h,text,color){
-  var hover=mouse.x>x&&mouse.x<x+w&&mouse.y>y&&mouse.y<y+h;
-  rrect(x,y,w,h,12);
-  ctx.fillStyle=hover?'#ffd633':color;ctx.fill();
-  ctx.fillStyle=(color===GOLD)?'#000':'#fff';
-  ctx.font='bold 14px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-  ctx.fillText(text,x+w/2,y+h/2+5);
-  return hover;
-}
+function judgeSample(good){ if(s4_samples.length>0){ var s=s4_samples.shift(); s4_total++; if(good===s.good) s4_correct++; genSample(); }}
 
-// --- Draw background image ---
-function drawBackground(){
-  if(bgLoaded){
-    // Scale to cover with slight zoom to make farm details (cows) bigger
-    var iw=bgImg.width, ih=bgImg.height;
-    var scale=Math.max(W/iw, H/ih)*1.15;
-    var sw=iw*scale, sh=ih*scale;
-    var sx=(W-sw)/2, sy=(H-sh)*0.35; // bias toward upper portion (sky/cows)
-    ctx.drawImage(bgImg, sx, sy, sw, sh);
+// ============ DRAW STAGES ============
+
+function drawStage0(){
+  // FEED THE COW
+  if(farmBg.complete&&farmBg.naturalWidth>0){
+    var iw3=farmBg.width, ih3=farmBg.height;
+    var s3=Math.max(W/iw3, H/ih3);
+    ctx.drawImage(farmBg, 0, 0, s3*iw3, s3*ih3);
+    ctx.fillStyle='rgba(0,0,0,0.35)';ctx.fillRect(0,0,W,H);
   } else {
-    // Fallback
-    var sky=ctx.createLinearGradient(0,0,0,H*0.5);
-    sky.addColorStop(0,'#7eb8da');sky.addColorStop(0.4,'#a3cee8');
-    sky.addColorStop(0.7,'#c5dff2');sky.addColorStop(1,'#a8c898');
-    ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
-    ctx.fillStyle='#6d9a3f';ctx.fillRect(0,H*0.55,W,H*0.45);
+    var grad=ctx.createLinearGradient(0,0,0,H);
+    grad.addColorStop(0,'#7eb8da');grad.addColorStop(0.55,'#a3cee8');grad.addColorStop(0.7,'#8bc34a');grad.addColorStop(1,'#558b2f');
+    ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
   }
-}
-
-// --- Cow position & udder (positioned on farm background) ---
-function getCowBox(){
-  return { cw:Math.min(380,W*0.44), ch:Math.min(380,W*0.44)*0.65, cx:W*0.36, cy:H*0.57 };
-}
-function getUdderRect(){
-  var cb=getCowBox();
-  return { x:cb.cx-cb.cw*0.06, y:cb.cy+cb.ch*0.28, w:cb.cw*0.14, h:cb.ch*0.12 };
-}
-
-// --- HUD ---
-function drawHUD(){
-  ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(0,0,W,44);
-  ctx.fillStyle='#fff';ctx.font='bold 14px "Segoe UI",system-ui,sans-serif';ctx.textAlign='left';
-  ctx.fillText('VITA',14,30);ctx.fillStyle=GOLD;ctx.fillText('HOW MILK IS MADE',54,30);
-  for(var i=0;i<5;i++){
-    var dx=W-140+i*24;
-    ctx.beginPath();ctx.arc(dx,22,7,0,Math.PI*2);
-    if(stageDone[i]){ ctx.fillStyle=GOLD;ctx.fill();ctx.shadowColor=GOLD;ctx.shadowBlur=6;ctx.fill();ctx.shadowBlur=0; }
-    else { ctx.fillStyle='#444';ctx.fill(); }
-  }
-}
-
-// ========== STAGES ==========
-
-// === INTRO ===
-function drawIntro(){
-  drawBackground();
-  // Light overlay for text readability on farm photo
-  ctx.fillStyle='rgba(0,0,0,0.25)';ctx.fillRect(0,0,W,H);
-
-  // Text card
-  rrect(W*0.1,H*0.10,W*0.8,H*0.18,16);
-  ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fill();
-
-  ctx.fillStyle='#fff';ctx.font='bold 28px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-  ctx.fillText('How Vita Milk Is Made',W/2,H*0.18);
-  ctx.fillStyle='#ccc';ctx.font='15px "Segoe UI",system-ui,sans-serif';
-  ctx.fillText('From the farm to your fridge — 5 interactive stages',W/2,H*0.18+28);
-
-  ctx.fillStyle='#ddd';ctx.font='13px "Segoe UI",system-ui,sans-serif';
-  ctx.fillText('🐄 Milking → 🔬 Quality → 🌡️ Pasteurize → ⚙️ Separate → 📦 Bottle',W/2,H*0.18+50);
-
-  var hov=drawButton(W/2-90,H*0.36,180,48,'🐄 START MILKING',GOLD);
-  if(hov&&mouse.clicked) startTransition('Walking to the barn...',1);
-}
-
-// === STAGE 1: MILKING (realistic) ===
-function drawStage1(){
-  drawBackground();
-
-  // Update milking
-  var ur=getUdderRect();
-  var onUdder=mouse.x>ur.x&&mouse.x<ur.x+ur.w&&mouse.y>ur.y&&mouse.y<ur.y+ur.h;
-  if((onUdder&&mouse.down)||s1_isMilking){
-    // Create new streams
-    if(s1_streams.length===0||Math.random()<0.3) startMilkStream();
-    // Increment progress
-    s1_clicks+=0.03;
-    if(s1_clicks>=s1_target) s1_clicks=s1_target;
-    s1_pailFill=Math.min(1,s1_pailFill+0.008);
-  }
-
-  // Udder highlight
-  if(onUdder||s1_isMilking){
-    ctx.strokeStyle=GOLD+'aa';ctx.lineWidth=3;ctx.setLineDash([4,3]);
-    rrect(ur.x-2,ur.y-2,ur.w+4,ur.h+4,10);ctx.stroke();
-    ctx.setLineDash([]);ctx.lineWidth=1;
-  }
-
-  // === MILK STREAMS ===
-  for(var i=s1_streams.length-1;i>=0;i--){
-    var s=s1_streams[i];
-    s.life+=s.speed;
-
-    if(s.life>=1){
-      // Stream reached pail - spawn splash
-      spawnSplash(s.tx,s.ty);
-      s1_streams.splice(i,1);
-      continue;
+  // Cows (real images)
+  for(var i=0;i<s1_cows.length;i++){
+    var co=s1_cows[i];
+    if(cowImg.complete&&cowImg.naturalWidth>0){
+      // Draw cow photo with rounded clip
+      ctx.save();
+      rrect(co.x,co.y,co.w,co.h,25);ctx.clip();
+      var iw=cowImg.width, ih=cowImg.height;
+      var scale=Math.max(co.w/iw, co.h/ih);
+      var sw=iw*scale, sh=ih*scale;
+      ctx.drawImage(cowImg, co.x-(sw-co.w)/2, co.y-(sh-co.h)*0.3, sw, sh);
+      ctx.restore();
+      rrect(co.x,co.y,co.w,co.h,25);ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=2;ctx.stroke();
+    } else {
+      // Fallback drawn cow
+      ctx.fillStyle='#f5f5dc';rrect(co.x,co.y,co.w,co.h,25);ctx.fill();
+      ctx.fillStyle='#333';rrect(co.x+co.w*0.1,co.y+co.h*0.15,co.w*0.25,co.h*0.55,12);ctx.fill();
+      ctx.fillStyle='#f5f5dc';ctx.beginPath();ctx.arc(co.x+co.w*0.85,co.y+co.h*0.3,co.h*0.35,0,Math.PI*2);ctx.fill();
     }
-
-    // Bezier curve from udder to pail
-    var t=s.life;
-    var cx1=s.sx+(s.tx-s.sx)*0.3, cy1=s.sy+60;
-    var cx2=s.tx-(s.tx-s.sx)*0.2, cy2=s.ty-40;
-    var x=Math.pow(1-t,3)*s.sx+3*Math.pow(1-t,2)*t*cx1+3*(1-t)*t*t*cx2+Math.pow(t,3)*s.tx;
-    var y=Math.pow(1-t,3)*s.sy+3*Math.pow(1-t,2)*t*cy1+3*(1-t)*t*t*cy2+Math.pow(t,3)*s.ty;
-
-    // Draw stream segment (only the part that's alive so far)
-    ctx.strokeStyle='rgba(255,255,255,0.6)';ctx.lineWidth=s.width;ctx.lineCap='round';
-    ctx.beginPath();ctx.moveTo(s.sx,s.sy);
-
-    var steps=20;
-    for(var j=1;j<=steps*t;j++){
-      var tt=j/steps;
-      var px=Math.pow(1-tt,3)*s.sx+3*Math.pow(1-tt,2)*tt*cx1+3*(1-tt)*tt*tt*cx2+Math.pow(tt,3)*s.tx;
-      var py=Math.pow(1-tt,3)*s.sy+3*Math.pow(1-tt,2)*tt*cy1+3*(1-tt)*tt*tt*cy2+Math.pow(tt,3)*s.ty;
-      ctx.lineTo(px,py);
-    }
-    ctx.stroke();
-
-    // Drop at tip
-    ctx.fillStyle='rgba(255,255,255,0.8)';ctx.beginPath();
-    ctx.arc(x,y,s.width*0.7,0,Math.PI*2);ctx.fill();
+    if(s1_fed>i){ ctx.fillStyle='rgba(76,175,80,0.3)';rrect(co.x,co.y,co.w,co.h,25);ctx.fill(); }
   }
-
-  // === SPLASHES ===
-  for(var i=s1_splashes.length-1;i>=0;i--){
-    var sp=s1_splashes[i];
-    sp.x+=sp.vx;sp.y+=sp.vy;sp.life-=sp.decay;
-    if(sp.life<=0){ s1_splashes.splice(i,1); continue; }
-    ctx.fillStyle='rgba(255,255,255,'+sp.life+')';
-    ctx.beginPath();ctx.arc(sp.x,sp.y,sp.size*sp.life,0,Math.PI*2);ctx.fill();
-  }
-
-  // === PAIL (right side) ===
-  var px=W*0.78, py=H*0.66, pw=80, ph=90;
-  // Pail body
-  var pailGrad=ctx.createLinearGradient(px-pw/2,0,px+pw/2,0);
-  pailGrad.addColorStop(0,'#8B7355');pailGrad.addColorStop(0.3,'#a0896c');pailGrad.addColorStop(0.7,'#8B7355');pailGrad.addColorStop(1,'#6B5335');
-  ctx.fillStyle=pailGrad;
-  ctx.beginPath();ctx.moveTo(px-pw/2,py-ph/2);ctx.lineTo(px-pw/2-10,py+ph/2);
-  ctx.lineTo(px+pw/2+10,py+ph/2);ctx.lineTo(px+pw/2,py-ph/2);ctx.closePath();ctx.fill();
-  ctx.strokeStyle='#5a4530';ctx.lineWidth=2;ctx.stroke();
-
-  // Milk inside pail (filling up)
-  var fillH=s1_pailFill*(ph-8);
-  ctx.fillStyle='rgba(255,255,255,0.75)';
-  ctx.beginPath();
-  var bottomLeft=py+ph/2-2, bottomRight=py+ph/2-2;
-  var topLeft=bottomLeft-fillH, topRight=bottomRight-fillH;
-  ctx.moveTo(px-pw/2+3,bottomLeft);ctx.lineTo(px-pw/2-6,topLeft);
-  ctx.lineTo(px+pw/2+6,topRight);ctx.lineTo(px+pw/2-3,bottomRight);ctx.closePath();ctx.fill();
-
-  // Milk surface shimmer
-  if(s1_pailFill>0){
-    ctx.fillStyle='rgba(255,255,255,0.3)';
-    ctx.beginPath();ctx.ellipse(px,py+ph/2-fillH,pw/2-4,4+Math.sin(Date.now()/300)*1.5,0,0,Math.PI*2);ctx.fill();
-  }
-
-  // Handle
-  ctx.strokeStyle='#777';ctx.lineWidth=4;ctx.beginPath();
-  ctx.arc(px,py-ph/2-4,pw*0.5,Math.PI*0.7,Math.PI*0.3);ctx.stroke();
-
-  // VITA label
-  ctx.fillStyle=GOLD;ctx.font='bold 11px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-  ctx.fillText('VITA',px,py-ph/2-16);
-
   // Instruction
-  if(s1_clicks<s1_target){
-    ctx.fillStyle='rgba(0,0,0,0.5)';rrect(W*0.05,10,W*0.55,36,10);ctx.fill();
-    ctx.fillStyle='#fff';ctx.font='bold 13px "Segoe UI",system-ui,sans-serif';ctx.textAlign='left';
-    ctx.fillText('🐄 Click & hold near the cow to milk  |  or hold SPACE',W*0.08,34);
-  }
-
-  // Progress bar at bottom
-  var barW=200;
-  ctx.fillStyle='rgba(0,0,0,0.5)';rrect(W/2-barW/2,H-30,barW,10,5);ctx.fill();
-  ctx.fillStyle=s1_clicks>=s1_target?'#4ade80':GOLD;
-  rrect(W/2-barW/2+1,H-29,(barW-2)*Math.min(1,s1_clicks/s1_target),8,4);ctx.fill();
-  ctx.fillStyle='#fff';ctx.font='11px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-  ctx.fillText(Math.round(s1_clicks/s1_target*100)+'%',W/2,H-38);
-
-  if(s1_clicks>=s1_target) completeStage(1);
+  ctx.fillStyle='rgba(0,0,0,0.5)';rrect(W*0.25,H*0.05,W*0.5,40,10);ctx.fill();
+  ctx.fillStyle='#fff';ctx.font='bold 16px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+  ctx.fillText('Press SPACE or tap to feed the cows ('+s1_fed+'/'+s1_target+')',W/2,32);
+  if(s1_fed>=s1_target) completeStage(0);
 }
 
-// === STAGE 2: QUALITY ===
-function drawStage2(){
-  drawBackground();
-  ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(0,0,W,H);
-
-  rrect(W*0.1,H*0.42,W*0.8,H*0.4,20);ctx.fillStyle='rgba(20,20,30,0.88)';ctx.fill();
-  ctx.strokeStyle='#333';ctx.lineWidth=1;ctx.stroke();
-
-  ctx.fillStyle='#fff';ctx.font='bold 19px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-  ctx.fillText('🔬 Stage 2 — Quality Check',W/2,78);
-  ctx.fillStyle='#aaa';ctx.font='13px "Segoe UI",system-ui,sans-serif';
-  ctx.fillText('Is the milk clean? [Click ✓/✗ or SPACE=Good]',W/2,100);
-
-  if(s2_current){
-    s2_current.alpha=Math.min(1,s2_current.alpha+0.1);var a=s2_current.alpha;
-    var sx=W/2,sy=H*0.55;
-    ctx.fillStyle='rgba(255,255,255,0.06)';
-    ctx.beginPath();ctx.moveTo(sx-22,sy+35);ctx.lineTo(sx-28,sy-25);ctx.lineTo(sx+28,sy-25);ctx.lineTo(sx+22,sy+35);ctx.closePath();ctx.fill();
-    ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=2;ctx.stroke();
-    ctx.fillStyle=s2_current.good?'rgba(255,255,255,'+(0.8*a)+')':'rgba(220,210,190,'+(0.8*a)+')';
-    ctx.beginPath();ctx.moveTo(sx-19,sy+30);ctx.lineTo(sx-25,sy-8);ctx.lineTo(sx+25,sy-8);ctx.lineTo(sx+19,sy+30);ctx.closePath();ctx.fill();
-
-    var accH=drawButton(W*0.32,H*0.80,110,44,'✓ GOOD','#22c55e');
-    var rejH=drawButton(W*0.54,H*0.80,110,44,'✗ BAD','#ef4444');
-    if(mouse.clicked){ s2_total++;
-      if(accH){ s2_score++;s2_feedback=s2_current.good?'✓ Correct!':'✗ That was bad...'; }
-      else if(rejH){ if(!s2_current.good)s2_score++;s2_feedback=s2_current.good?'✗ It was good!':'✓ Rejected!'; }
-      s2_fbTimer=55;genSample();
-    }
-    s2_timer--;if(s2_timer<=0){ s2_total++;s2_feedback='⏰ Too slow!';s2_fbTimer=45;genSample(); }
-    var tb=220*(s2_timer/140);
-    ctx.fillStyle=s2_timer<30?'#ef4444':'#666';ctx.fillRect(W/2-110,H*0.72,tb,6);
-    ctx.strokeStyle='#444';ctx.strokeRect(W/2-110,H*0.72,220,6);
+function drawStage1(){
+  // MILK THE COW
+  if(farmBg.complete&&farmBg.naturalWidth>0){
+    var iw4=farmBg.width, ih4=farmBg.height;
+    var s4=Math.max(W/iw4, H/ih4);
+    ctx.drawImage(farmBg, 0, 0, s4*iw4, s4*ih4);
+    ctx.fillStyle='rgba(0,0,0,0.35)';ctx.fillRect(0,0,W,H);
+  } else {
+    var grad=ctx.createLinearGradient(0,0,0,H);
+    grad.addColorStop(0,'#7eb8da');grad.addColorStop(0.55,'#a3cee8');grad.addColorStop(0.7,'#8bc34a');grad.addColorStop(1,'#558b2f');
+    ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
   }
-  if(s2_fbTimer>0){ s2_fbTimer--;
-    ctx.fillStyle=s2_feedback[0]==='✓'?'#4ade80':'#f87171';
-    ctx.font='bold 15px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-    ctx.fillText(s2_feedback,W/2,H*0.90);
-  }
-  ctx.fillStyle='#aaa';ctx.font='13px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-  ctx.fillText(s2_score+' / '+Math.max(s2_total,1)+' correct · '+Math.max(0,8-s2_total)+' left',W/2,H*0.94);
-  if(s2_total>=8) completeStage(2);
-}
-
-// === STAGE 3: PASTEURIZATION ===
-function drawStage3(){
-  drawBackground();ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(0,0,W,H);
-  ctx.fillStyle='#fff';ctx.font='bold 19px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-  ctx.fillText('🌡️ Stage 3 — Pasteurization',W/2,78);
-  ctx.fillStyle='#aaa';ctx.font='13px "Segoe UI",system-ui,sans-serif';
-  ctx.fillText('Hold at 72°C for '+s3_targetSec+' seconds',W/2,100);
-
-  var tx=W*0.22,ty=H*0.28,tw=55,th=210;
-  rrect(tx,ty,tw,th,28);var tGrad=ctx.createLinearGradient(0,ty+th,0,ty);
-  tGrad.addColorStop(0,'#22c55e');tGrad.addColorStop(0.3,'#22c55e');tGrad.addColorStop(0.3,GOLD);
-  tGrad.addColorStop(0.5,GOLD);tGrad.addColorStop(0.5,'#ef4444');tGrad.addColorStop(1,'#ef4444');
-  ctx.fillStyle=tGrad;ctx.fill();
-  ctx.fillStyle='#ef4444';rrect(tx+8,ty+th-th*(s3_temp/100),tw-16,th*(s3_temp/100),20);ctx.fill();
-  ctx.fillStyle='rgba(34,197,94,0.12)';ctx.fillRect(tx-28,ty+th*0.28,tw+56,th*0.18);
-  ctx.fillStyle='#4ade80';ctx.font='10px "Segoe UI",system-ui,sans-serif';ctx.textAlign='right';
-  ctx.fillText('72°C',tx-5,ty+th*0.28+20);
-  ctx.fillStyle='#fff';ctx.font='bold 22px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-  ctx.fillText(Math.round(s3_temp)+'°C',tx+tw/2,ty+th+28);
-
-  var tkX=W*0.50,tkY=H*0.35,tkW=170,tkH=130;
-  rrect(tkX,tkY,tkW,tkH,18);ctx.fillStyle='rgba(255,255,255,0.04)';ctx.fill();
-  ctx.strokeStyle='#444';ctx.lineWidth=2;ctx.stroke();
-  ctx.fillStyle='rgba(255,255,255,0.25)';ctx.beginPath();
-  ctx.moveTo(tkX+4,tkY+tkH-4);ctx.lineTo(tkX+4,tkY+tkH-90);ctx.lineTo(tkX+tkW-4,tkY+tkH-90);ctx.lineTo(tkX+tkW-4,tkY+tkH-4);ctx.fill();
-  if(s3_temp>45){for(var i=0;i<Math.floor(s3_temp/15);i++){
-    var bx=tkX+30+Math.sin(Date.now()/700+i)*40,by_=tkY+tkH-92-((Date.now()/180+i*45)%82);
-    ctx.fillStyle='rgba(255,255,255,'+(0.15+Math.sin(Date.now()/250+i)*0.1)+')';
-    ctx.beginPath();ctx.arc(bx,by_,3,0,Math.PI*2);ctx.fill();
-  }}
-  ctx.fillStyle='#888';ctx.font='11px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-  ctx.fillText('PASTEURIZER',tkX+tkW/2,tkY+tkH+18);
-
-  var inZone=s3_temp>=67&&s3_temp<=77;
-  if(inZone){ s3_zoneTime+=1/60; var left=Math.max(0,s3_targetSec-s3_zoneTime);
-    ctx.fillStyle='#4ade80';ctx.font='bold 14px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-    ctx.fillText('IN ZONE · '+left.toFixed(1)+'s remaining',W/2,H*0.78);
-  } else { ctx.fillStyle='#f87171';ctx.font='13px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-    ctx.fillText('Out of zone!',W/2,H*0.78); }
-
-  var heatH=drawButton(W*0.28,H*0.85,120,44,'🔥 HEAT','#ef4444');
-  var coolH=drawButton(W*0.56,H*0.85,120,44,'❄ COOL','#3b82f6');
-  s3_heatOn=heatH&&mouse.down;s3_coolOn=coolH&&mouse.down;
-  if(s3_heatOn)s3_temp=Math.min(100,s3_temp+0.55);
-  if(s3_coolOn)s3_temp=Math.max(0,s3_temp-0.5);
-  if(!s3_heatOn&&!s3_coolOn)s3_temp+=(35-s3_temp)*0.007;
-  if(s3_zoneTime>=s3_targetSec)completeStage(3);
-}
-
-// === STAGE 4: SEPARATOR ===
-function drawStage4(){
-  drawBackground();ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fillRect(0,0,W,H);
-  ctx.fillStyle='#fff';ctx.font='bold 19px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-  ctx.fillText('⚙️ Stage 4 — Cream Separator',W/2,78);
-  ctx.fillStyle='#aaa';ctx.font='13px "Segoe UI",system-ui,sans-serif';
-  ctx.fillText('← → arrow keys to tilt separator',W/2,100);
-
-  var sx=W/2,sy=H*0.46;
-  rrect(sx-55,sy-28,110,75,16);ctx.fillStyle='#1a1a2e';ctx.fill();ctx.strokeStyle='#444';ctx.lineWidth=2;ctx.stroke();
-  ctx.save();ctx.translate(sx,sy);ctx.rotate(s4_tilt*0.35);
-  ctx.fillStyle='#333';ctx.beginPath();ctx.ellipse(0,0,42,16,0,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#555';ctx.stroke();
-  ctx.fillStyle='rgba(255,255,255,0.12)';ctx.beginPath();ctx.arc(0,0,9,0,Math.PI*2);ctx.fill();ctx.restore();
-  ctx.fillStyle='#555';ctx.beginPath();ctx.moveTo(sx-22,sy-33);ctx.lineTo(sx+22,sy-33);ctx.lineTo(sx+8,sy-18);ctx.lineTo(sx-8,sy-18);ctx.closePath();ctx.fill();
-  ctx.fillStyle='#fff8e0';rrect(sx-82+s4_tilt*10,sy+48,55,18,8);ctx.fill();
-  ctx.fillStyle='#888';ctx.font='10px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';ctx.fillText('CREAM',sx-54+s4_tilt*10,sy+78);
-  ctx.fillStyle='#fff';rrect(sx+27+s4_tilt*10,sy+48,55,18,8);ctx.fill();
-  ctx.fillStyle='#888';ctx.fillText('VITA MILK',sx+54+s4_tilt*10,sy+78);
-
-  var bx=sx+54+s4_tilt*10+28,by=sy+42;
-  ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(bx-16,by-26);ctx.lineTo(bx-20,by+28);ctx.lineTo(bx+20,by+28);ctx.lineTo(bx+16,by-26);ctx.closePath();ctx.fill();
-  ctx.strokeStyle='#ddd';ctx.lineWidth=2;ctx.stroke();
-  ctx.fillStyle=GOLD;rrect(bx-18,by-36,36,12,5);ctx.fill();
-  ctx.fillStyle=NAVY;ctx.font='bold 8px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';ctx.fillText('VITA',bx,by+2);ctx.fillText('3.2%',bx,by+14);
-
-  if(Math.random()<0.22){ s4_drops.push({x:sx-10+Math.random()*20,y:sy-34,vx:s4_tilt*2.8+(Math.random()-0.5)*0.6,vy:2.5+Math.random()*1.5,life:1}); }
-  for(var i=s4_drops.length-1;i>=0;i--){ var d=s4_drops[i];
-    d.x+=d.vx;d.y+=d.vy;d.life-=0.02;if(d.life<=0||d.y>H){s4_drops.splice(i,1);continue;}
-    ctx.fillStyle='rgba(255,255,255,'+d.life+')';ctx.beginPath();ctx.arc(d.x,d.y,4,0,Math.PI*2);ctx.fill();
-    if(d.y>by-26&&d.y<by+28&&d.x>bx-22&&d.x<bx+24){ s4_collected++;s4_drops.splice(i,1);
-      particles.push({x:bx,y:by,vx:(Math.random()-0.5)*2,vy:-2-Math.random()*2,life:1,decay:0.035,color:'#fff',size:3}); }
-  }
-  var fr=s4_collected/s4_target;ctx.fillStyle='rgba(255,255,255,'+(0.25+fr*0.55)+')';ctx.fillRect(bx-17,by+28-fr*52,34,fr*52);
-  ctx.fillStyle='#fff';ctx.font='bold 13px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-  ctx.fillText(s4_collected+' / '+s4_target+' drops',W/2,H*0.80);
-  if(keys['arrowleft']||keys['a'])s4_tilt=Math.max(-1,s4_tilt-0.04);
-  if(keys['arrowright']||keys['d'])s4_tilt=Math.min(1,s4_tilt+0.04);
-  if(!keys['arrowleft']&&!keys['a']&&!keys['arrowright']&&!keys['d'])s4_tilt*=0.93;
-  if(s4_collected>=s4_target)completeStage(4);
-}
-
-// === STAGE 5: BOTTLING ===
-function drawStage5(){
-  drawBackground();ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fillRect(0,0,W,H);
-  ctx.fillStyle='#fff';ctx.font='bold 19px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-  ctx.fillText('📦 Stage 5 — Bottling',W/2,78);
-  ctx.fillStyle='#aaa';ctx.font='13px "Segoe UI",system-ui,sans-serif';
-  ctx.fillText('Click bottles or SPACE to fill!',W/2,100);
-
-  ctx.fillStyle='#1a1a1a';ctx.fillRect(0,H*0.44,W,70);
-  ctx.strokeStyle='#333';for(var x=(Date.now()/18)%40-40;x<W;x+=40){ctx.beginPath();ctx.moveTo(x,H*0.44+35);ctx.lineTo(x+20,H*0.44+70);ctx.stroke();}
-  s5_timer++;if(s5_timer>40-s5_filled*2&&s5_filled<s5_target){s5_timer=0;s5_bottles.push({x:W+30,y:H*0.46+(Math.random()-0.5)*35,filled:false,speed:2.2+Math.random()*1.2});}
-  for(var i=s5_bottles.length-1;i>=0;i--){var b=s5_bottles[i];b.x-=b.speed;if(b.x<-70){s5_bottles.splice(i,1);continue;}
-    if(!b.filled){ctx.fillStyle='rgba(255,255,255,0.08)';ctx.beginPath();ctx.moveTo(b.x-18,b.y-30);ctx.lineTo(b.x-22,b.y+32);ctx.lineTo(b.x+22,b.y+32);ctx.lineTo(b.x+18,b.y-30);ctx.closePath();ctx.fill();
-      ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=1.5;ctx.stroke();ctx.fillStyle=GOLD;rrect(b.x-20,b.y-40,40,11,4);ctx.fill();
-      ctx.fillStyle='#555';ctx.font='bold 9px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';ctx.fillText('VITA',b.x,b.y+4);ctx.fillText('QUMËSHT',b.x,b.y+16);
-      var bHov=mouse.x>b.x-24&&mouse.x<b.x+24&&mouse.y>b.y-40&&mouse.y<b.y+36;
-      if(bHov){ctx.strokeStyle=GOLD;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(b.x-19,b.y-31);ctx.lineTo(b.x-23,b.y+33);ctx.lineTo(b.x+23,b.y+33);ctx.lineTo(b.x+19,b.y-31);ctx.closePath();ctx.stroke();
-        if(mouse.clicked){b.filled=true;s5_filled++;particles.push({x:b.x,y:b.y,vx:(Math.random()-0.5)*3,vy:-3-Math.random()*3,life:1,decay:0.035,color:GOLD,size:4});}}
-    } else {ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(b.x-18,b.y-30);ctx.lineTo(b.x-22,b.y+32);ctx.lineTo(b.x+22,b.y+32);ctx.lineTo(b.x+18,b.y-30);ctx.closePath();ctx.fill();
-      ctx.strokeStyle='#ddd';ctx.lineWidth=1.5;ctx.stroke();ctx.fillStyle='rgba(255,255,255,0.5)';ctx.fillRect(b.x-14,b.y-4,28,34);
-      ctx.fillStyle=GOLD;rrect(b.x-20,b.y-40,40,11,4);ctx.fill();ctx.fillStyle=NAVY;ctx.font='bold 9px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-      ctx.fillText('VITA',b.x,b.y+4);ctx.fillText('3.2%',b.x,b.y+16);ctx.fillStyle='#4ade80';ctx.font='13px sans-serif';ctx.fillText('✓',b.x,b.y-44);}
-  }
-  ctx.fillStyle='#fff';ctx.font='bold 14px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-  ctx.fillText(s5_filled+' / '+s5_target+' bottles',W/2,H*0.83);
-  if(s5_filled>=s5_target)completeStage(5);
-}
-
-// === VICTORY ===
-function drawVictory(){
-  drawBackground();ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(0,0,W,H);
-  ctx.fillStyle=GOLD;ctx.font='bold 28px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-  ctx.fillText('🥛 Milk Production Complete!',W/2,H*0.20);
-  ctx.fillStyle='#fff';ctx.font='16px "Segoe UI",system-ui,sans-serif';
-  ctx.fillText('Vita Qumësht — Fresh from Farm to Fridge',W/2,H*0.20+38);
-  var steps=['🐄 Milked the cows','🔬 Passed quality check','🌡️ Pasteurized at 72°C','⚙️ Separated cream','📦 Bottled & sealed'];
-  ctx.font='14px "Segoe UI",system-ui,sans-serif';steps.forEach(function(s,i){ctx.fillStyle=stageDone[i]?'#4ade80':'#555';ctx.fillText((stageDone[i]?'✓ ':'○ ')+s,W/2,H*0.36+i*26);});
-  var vx=W/2,vy=H*0.72;ctx.fillStyle='#fff';
-  ctx.beginPath();ctx.moveTo(vx-22,vy-42);ctx.lineTo(vx-28,vy+48);ctx.lineTo(vx+28,vy+48);ctx.lineTo(vx+22,vy-42);ctx.closePath();ctx.fill();
-  ctx.strokeStyle='#ddd';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle=GOLD;rrect(vx-26,vy-54,52,16,6);ctx.fill();
-  ctx.fillStyle=NAVY;ctx.font='bold 14px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';ctx.fillText('VITA',vx,vy+8);ctx.fillText('QUMËSHT',vx,vy+28);
-  var repH=drawButton(W/2-70,H*0.93,140,44,'PLAY AGAIN',GOLD);if(repH&&mouse.clicked)location.reload();
-}
-
-// === SPLASH ANIMATION (milk fills, then VITA revealed) ===
-function drawSplash(){
-  // Phases: 1=milk flowing, 2=s settled, 3=text reveal, 4=hold text, 5=fade out
-  if(splashPhase===1){
-    splashTimer+=0.07;
-    if(splashTimer>=1){ splashPhase=2; splashTimer=0; }
-  } else if(splashPhase===2){
-    splashTimer+=0.08;
-    if(splashTimer>=1){ splashPhase=3; splashTimer=0; }
-  } else if(splashPhase===3){
-    splashTimer+=0.1;
-    if(splashTimer>=1){ splashPhase=4; splashTimer=0; }
-  } else if(splashPhase===4){
-    splashTimer+=0.07;
-    if(splashTimer>=1){ splashPhase=5; splashTimer=0; }
-  } else if(splashPhase===5){
-    splashTimer+=0.15;
-    if(splashTimer>=1){ splashPhase=6; } // done
-  }
-
-  // Background: dark navy
-  ctx.fillStyle='#050a14';ctx.fillRect(0,0,W,H);
-
-  if(splashPhase>=5){
-    var fadeAlpha=1-splashTimer;
-    ctx.globalAlpha=fadeAlpha;
-  }
-
-  // Milk wave progresses left to right (phase 1 only)
-  var waveProgress=splashPhase===1?splashTimer:1;
-  // Text only appears from phase 3 onward (AFTER milk has settled)
-  var textAlpha=splashPhase>=3?Math.min(1,splashPhase===3?splashTimer:1):0;
-
-  // Milk pool - fills from left
-  var milkRight=W*waveProgress;
-  var milkTop=0;
-
-  // Main milk body
-  ctx.fillStyle='rgba(255,255,255,0.92)';
-  ctx.beginPath();
-  ctx.moveTo(0,milkTop);
-  for(var x=0;x<=milkRight;x+=4){
-    var wy=milkTop+Math.sin(x*0.04+Date.now()*0.004)*6+Math.sin(x*0.08+Date.now()*0.006)*3;
-    ctx.lineTo(x,wy);
-  }
-  ctx.lineTo(milkRight,H);
-  ctx.lineTo(0,H);
-  ctx.closePath();ctx.fill();
-
-  // Milk foam on top
-  ctx.fillStyle='rgba(255,255,255,0.5)';
-  ctx.beginPath();
-  for(var x=0;x<=milkRight;x+=4){
-    var fy=milkTop+Math.sin(x*0.04+Date.now()*0.004)*6+Math.sin(x*0.08+Date.now()*0.006)*3-8-Math.random()*3;
-    ctx.lineTo(x,fy);
-  }
-  ctx.lineTo(milkRight,milkTop-10);
-  ctx.lineTo(0,milkTop-10);
-  ctx.closePath();ctx.fill();
-
-  // VITA text revealed by milk (only AFTER milk fully fills screen)
-  if(textAlpha>0){
-    ctx.save();
-    ctx.beginPath();ctx.rect(0,milkTop,W,H-milkTop);ctx.clip();
-
-    var glowGrad=ctx.createRadialGradient(W/2,H*0.52,20,W/2,H*0.52,W*0.6);
-    glowGrad.addColorStop(0,'rgba(19,75,141,'+(0.5*textAlpha)+')');
-    glowGrad.addColorStop(0.5,'rgba(19,75,141,'+(0.2*textAlpha)+')');
-    glowGrad.addColorStop(1,'transparent');
-    ctx.fillStyle=glowGrad;ctx.fillRect(0,milkTop,W,H-milkTop);
-
-    var fs=Math.min(W*0.094, H*0.14);
-    ctx.fillStyle='rgba(19,75,141,'+textAlpha+')';
-    ctx.font='bold '+fs+'px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-    ctx.fillText('VITA',W/2,H*0.58);
-
-    ctx.strokeStyle='rgba(8,45,85,'+(textAlpha*0.5)+')';ctx.lineWidth=3;
-    ctx.strokeText('VITA',W/2,H*0.58);
-
-    var sfs=Math.min(W*0.024, H*0.035);
-    ctx.fillStyle='rgba(242,194,0,'+(textAlpha*0.9)+')';
-    ctx.font='bold '+sfs+'px "Segoe UI",system-ui,sans-serif';
-    ctx.fillText('FRESH DAIRY · FROM FARM TO FRIDGE',W/2,H*0.70);
-
+  // Cow (real image)
+  var cx=W*0.15,cy=H*0.3,cw=W*0.25,ch=H*0.3;
+  if(cowImg.complete&&cowImg.naturalWidth>0){
+    ctx.save(); rrect(cx,cy,cw,ch,30);ctx.clip();
+    var iw2=cowImg.width, ih2=cowImg.height;
+    var s2=Math.max(cw/iw2, ch/ih2);
+    ctx.drawImage(cowImg, cx-(s2*iw2-cw)/2, cy-(s2*ih2-ch)*0.3, s2*iw2, s2*ih2);
     ctx.restore();
+    rrect(cx,cy,cw,ch,30);ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=2;ctx.stroke();
+  } else {
+    ctx.fillStyle='#f5f5dc';rrect(cx,cy,cw,ch,30);ctx.fill();
+    ctx.fillStyle='#333';rrect(cx+cw*0.08,cy+ch*0.12,cw*0.22,ch*0.5,10);ctx.fill();
+    ctx.fillStyle='#f5f5dc';ctx.beginPath();ctx.arc(cx+cw*0.82,cy+ch*0.25,ch*0.3,0,Math.PI*2);ctx.fill();
   }
+  // Udder
+  var ux=cx+cw*0.4,uy=cy+ch*0.75,uw=cw*0.25,uh=ch*0.25;
+  ctx.fillStyle='#e8b4b8';rrect(ux,uy,uw,uh,12);ctx.fill();
+  ctx.strokeStyle=s2_streaming?GOLD:'#c9959b';ctx.lineWidth=2;ctx.stroke();
+  // Teats
+  for(var t=0;t<4;t++){ ctx.fillStyle='#e8b4b8';ctx.beginPath();ctx.arc(ux+uw*0.15+t*uw*0.23,uy+uh+6,4,0,Math.PI*2);ctx.fill(); }
+  // Pail
+  var px=W*0.7,py=H*0.5;
+  ctx.fillStyle='#8B7355';ctx.beginPath();ctx.moveTo(px-40,py-30);ctx.lineTo(px-48,py+40);ctx.lineTo(px+48,py+40);ctx.lineTo(px+40,py-30);ctx.closePath();ctx.fill();
+  ctx.strokeStyle='#5a4530';ctx.lineWidth=2;ctx.stroke();
+  // Milk in pail
+  var fillH=s2_milk/s2_target*65;
+  ctx.fillStyle='rgba(255,255,255,0.8)';
+  ctx.beginPath();ctx.moveTo(px-36,py+36);ctx.lineTo(px-36-fillH*0.05,py+36-fillH);ctx.lineTo(px+36+fillH*0.05,py+36-fillH);ctx.lineTo(px+36,py+36);ctx.closePath();ctx.fill();
+  // Stream
+  s2_streaming=(mouse.down&&mouse.x>ux&&mouse.x<ux+uw&&mouse.y>uy&&mouse.y<uy+uh+20);
+  if(s2_streaming){ s2_milk+=0.05; if(s2_milk>=s2_target) s2_milk=s2_target; }
+  if(s2_streaming||s2_milk>0&&s2_milk<s2_target){
+    ctx.strokeStyle='rgba(255,255,255,0.75)';ctx.lineWidth=5;ctx.beginPath();
+    ctx.moveTo(ux+uw/2,uy+uh+10);ctx.quadraticCurveTo(ux+uw/2+30,py-10,px,py+36-fillH);ctx.stroke();
+  }
+  // Instruction
+  ctx.fillStyle='rgba(0,0,0,0.5)';rrect(W*0.2,H*0.05,W*0.6,40,10);ctx.fill();
+  ctx.fillStyle='#fff';ctx.font='bold 15px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+  ctx.fillText('Click & hold the udder to milk ('+Math.floor(s2_milk/s2_target*100)+'%)',W/2,32);
+  if(s2_milk>=s2_target) completeStage(1);
+}
 
-  // Milk drips on right edge while still flowing
-  if(waveProgress<1){
-    var dripX=milkRight;
-    ctx.fillStyle='rgba(255,255,255,0.7)';
-    for(var i=0;i<3;i++){
-      var dy=milkTop+60+i*50+Math.sin(Date.now()*0.01+i)*8;
-      ctx.beginPath();ctx.arc(dripX,dy,5+i*2,0,Math.PI*2);ctx.fill();
-      ctx.fillStyle='rgba(255,255,255,0.3)';
-      ctx.fillRect(dripX-2,dy,H*0.03,12+i*8);
-      ctx.fillStyle='rgba(255,255,255,0.7)';
+function drawStage2(){
+  // TRANSPORT — drive truck, collect milk icons, avoid potholes
+  var grad=ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,'#7eb8da');grad.addColorStop(0.6,'#a3cee8');grad.addColorStop(0.7,'#666');grad.addColorStop(1,'#333');
+  ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
+  // Road
+  ctx.fillStyle='#444';ctx.fillRect(0,H*0.58,W,H*0.18);
+  ctx.fillStyle='#ff0';ctx.fillRect((s3_x*40)%W,H*0.66,25,3);
+  // Obstacles (potholes)
+  s3_obstacles.forEach(function(o){ o.x-=1.5; if(o.x<-30){o.x=W+30;o.y=H*0.58+Math.random()*H*0.16;} ctx.fillStyle='#222';ctx.beginPath();ctx.arc(o.x,o.y,o.r,0,Math.PI*2);ctx.fill(); });
+  // Collectibles
+  s3_obstacles.forEach(function(o,i){ if(i%2===0){ ctx.fillStyle='rgba(255,255,255,0.7)';ctx.fillRect(o.x+40,o.y-15,16,20);ctx.fillStyle=NAVY;ctx.font='bold 8px "Segoe UI"';ctx.fillText('V',o.x+48,o.y);} });
+  // Truck
+  var tx=s3_x,ty=H*0.55;
+  if(keys['arrowleft']||keys['a']){ s3_x-=3; if(s3_x<0) s3_x=0; }
+  if(keys['arrowright']||keys['d']){ s3_x+=3; if(s3_x>W*0.7) s3_x=W*0.7; }
+  ctx.fillStyle=NAVY;rrect(tx,ty,70,40,8);ctx.fill();
+  ctx.fillStyle='#0D2E66';rrect(tx-10,ty+28,90,20,6);ctx.fill();
+  ctx.fillStyle='#fff';ctx.fillRect(tx+50,ty-18,18,20);
+  ctx.fillStyle='#333';ctx.beginPath();ctx.arc(tx+10,ty+42,8,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(tx+60,ty+42,8,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=GOLD;ctx.font='bold 10px "Segoe UI"';ctx.textAlign='center';ctx.fillText('VITA',tx+35,ty+22);
+  // Check collisions
+  s3_obstacles.forEach(function(o){
+    if(Math.abs(o.x-tx-35)<25&&Math.abs(o.y-ty-20)<25){
+      if(o.r>14){ s3_score=Math.max(0,s3_score-1); o.x=-100; } // pothole
+      else { s3_score++; o.x=-100; } // collectible
+    }
+  });
+  ctx.fillStyle='rgba(0,0,0,0.5)';rrect(W*0.25,H*0.05,W*0.5,30,8);ctx.fill();
+  ctx.fillStyle='#fff';ctx.font='bold 14px "Segoe UI"';ctx.textAlign='center';
+  ctx.fillText('Arrow keys to drive · Collect: '+s3_score+'/'+s3_target,W/2,26);
+  if(s3_score>=s3_target) completeStage(2);
+}
+
+function drawStage3(){
+  // TEST THE MILK
+  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#fff';ctx.font='bold 20px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';ctx.fillText('Stage 4 - Test the Milk',W/2,60);
+  ctx.fillStyle='#aaa';ctx.font='14px "Segoe UI"';ctx.fillText('Press  for good milk,  for bad · SPACE = Good',W/2,85);
+  if(s4_samples.length>0){ var s=s4_samples[0]; s.alpha=Math.min(1,s.alpha+0.08);
+    // Bottle
+    var bx=W/2,by=H*0.5;
+    ctx.fillStyle='rgba(255,255,255,0.1)';ctx.beginPath();ctx.moveTo(bx-20,by+30);ctx.lineTo(bx-26,by-20);ctx.lineTo(bx+26,by-20);ctx.lineTo(bx+20,by+30);ctx.closePath();ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.3)';ctx.stroke();
+    ctx.fillStyle=s.good?'rgba(255,255,255,'+(0.7*s.alpha)+')':'rgba(200,180,150,'+(0.7*s.alpha)+')';
+    ctx.beginPath();ctx.moveTo(bx-18,by+26);ctx.lineTo(bx-23,by-5);ctx.lineTo(bx+23,by-5);ctx.lineTo(bx+18,by+26);ctx.closePath();ctx.fill();
+    var g=btn(W*0.3,H*0.78,100,42,'GOOD','#22c55e');
+    var b=btn(W*0.58,H*0.78,100,42,'BAD','#ef4444');
+    if(mouse.clicked){ if(g) judgeSample(true); else if(b) judgeSample(false); }
+  }
+  ctx.fillStyle='#aaa';ctx.font='14px "Segoe UI"';ctx.textAlign='center';
+  ctx.fillText(s4_correct+' / '+s4_total+' correct · '+(s4_target-s4_total)+' left',W/2,H*0.9);
+  if(s4_total>=s4_target) completeStage(3);
+}
+
+function drawStage4(){
+  // PASTEURIZATION
+  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#fff';ctx.font='bold 20px "Segoe UI"';ctx.textAlign='center';ctx.fillText('Stage 5 - Pasteurization',W/2,60);
+  ctx.fillStyle='#aaa';ctx.font='14px "Segoe UI"';ctx.fillText('Hold at 72°C for '+s5_targetSec+' seconds',W/2,85);
+  // Thermometer
+  var tx=W*0.15,ty=H*0.25,tw=50,th=200;
+  rrect(tx,ty,tw,th,25); var tg=ctx.createLinearGradient(0,ty+th,0,ty);
+  tg.addColorStop(0,'#22c55e');tg.addColorStop(0.35,'#22c55e');tg.addColorStop(0.35,GOLD);tg.addColorStop(0.65,GOLD);tg.addColorStop(0.65,'#ef4444');tg.addColorStop(1,'#ef4444');
+  ctx.fillStyle=tg;ctx.fill();
+  ctx.fillStyle='#ef4444';rrect(tx+6,ty+th-th*(s5_temp/100),tw-12,th*(s5_temp/100),18);ctx.fill();
+  ctx.fillStyle='rgba(34,197,94,0.15)';ctx.fillRect(tx-20,ty+th*0.23,tw+40,th*0.18);
+  ctx.fillStyle='#4ade80';ctx.font='10px "Segoe UI"';ctx.textAlign='right';ctx.fillText('72°C',tx-4,ty+th*0.23+18);
+  ctx.fillStyle='#fff';ctx.font='bold 20px "Segoe UI"';ctx.textAlign='center';ctx.fillText(Math.round(s5_temp)+'°C',tx+tw/2,ty+th+26);
+  // Tank
+  var kx=W*0.4,ky=H*0.35,kw=W*0.4,kh=120;
+  rrect(kx,ky,kw,kh,16);ctx.fillStyle='rgba(255,255,255,0.04)';ctx.fill();ctx.strokeStyle='#333';ctx.stroke();
+  // Bubbles
+  if(s5_temp>40){for(var i=0;i<Math.floor(s5_temp/12);i++){ var bx=kx+30+Math.sin(Date.now()/600+i)*40,by_=ky+kh-10-((Date.now()/150+i*40)%(kh-10)); ctx.fillStyle='rgba(255,255,255,'+(0.12+Math.sin(Date.now()/200+i)*0.08)+')';ctx.beginPath();ctx.arc(bx,by_,2.5,0,Math.PI*2);ctx.fill();}}
+  var inZone=s5_temp>=67&&s5_temp<=77;
+  if(inZone){ s5_zoneTime+=1/60; ctx.fillStyle='#4ade80';ctx.font='bold 14px "Segoe UI"';ctx.textAlign='center'; ctx.fillText('IN ZONE · '+(s5_targetSec-s5_zoneTime).toFixed(1)+'s left',W/2,H*0.8); }
+  else { ctx.fillStyle='#f87171';ctx.font='13px "Segoe UI"';ctx.textAlign='center';ctx.fillText('Out of zone!',W/2,H*0.8); }
+  if(btn(W*0.25,H*0.9,110,40,' HEAT','#ef4444')){ s5_heat=true; s5_cool=false; }
+  if(btn(W*0.6,H*0.9,110,40,' COOL','#3b82f6')){ s5_cool=true; s5_heat=false; }
+  if(!mouse.down){s5_heat=false;s5_cool=false;}
+  if(s5_heat) s5_temp=Math.min(100,s5_temp+0.6);
+  if(s5_cool) s5_temp=Math.max(0,s5_temp-0.55);
+  if(!s5_heat&&!s5_cool) s5_temp+=(35-s5_temp)*0.008;
+  if(s5_zoneTime>=s5_targetSec) completeStage(4);
+}
+
+function drawStage5(){
+  // HOMOGENIZATION — click globules to pop them
+  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#fff';ctx.font='bold 20px "Segoe UI"';ctx.textAlign='center';ctx.fillText('Stage 6 - Homogenization',W/2,60);
+  ctx.fillStyle='#aaa';ctx.font='14px "Segoe UI"';ctx.fillText('Click the fat globules to break them down',W/2,85);
+  // Tank
+  rrect(W*0.1,H*0.28,W*0.8,H*0.4,20);ctx.fillStyle='rgba(255,255,255,0.03)';ctx.fill();ctx.strokeStyle='#333';ctx.stroke();
+  // Globules
+  for(var i=s6_globules.length-1;i>=0;i--){
+    var g=s6_globules[i];
+    g.x+=g.vx;g.y+=g.vy;
+    if(g.x<W*0.1||g.x>W*0.9) g.vx*=-1;
+    if(g.y<H*0.28||g.y>H*0.68) g.vy*=-1;
+    if(mouse.clicked&&Math.abs(mouse.x-g.x)<g.r+5&&Math.abs(mouse.y-g.y)<g.r+5){ s6_globules.splice(i,1); s6_popped++; particles.push({x:g.x,y:g.y,vx:(Math.random()-0.5)*4,vy:(Math.random()-0.5)*4,life:1,decay:0.05,color:'#fff',size:3}); continue; }
+    ctx.fillStyle='rgba(255,255,220,0.7)';ctx.beginPath();ctx.arc(g.x,g.y,g.r,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.3)';ctx.stroke();
+  }
+  ctx.fillStyle='#aaa';ctx.font='14px "Segoe UI"';ctx.textAlign='center';
+  ctx.fillText('Globules broken: '+s6_popped+' / '+s6_target,W/2,H*0.78);
+  if(s6_popped>=s6_target) completeStage(5);
+}
+
+function drawStage6(){
+  // FILL THE BOTTLE
+  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#fff';ctx.font='bold 20px "Segoe UI"';ctx.textAlign='center';ctx.fillText('Stage 7 - Fill the Bottles',W/2,60);
+  ctx.fillStyle='#aaa';ctx.font='14px "Segoe UI"';ctx.fillText('Press SPACE or click when bottle is under the nozzle',W/2,85);
+  // Conveyor
+  ctx.fillStyle='#222';ctx.fillRect(0,H*0.5,W,60);
+  ctx.strokeStyle='#333';for(var x=(Date.now()/20)%30-30;x<W;x+=30){ctx.beginPath();ctx.moveTo(x,H*0.53);ctx.lineTo(x+15,H*0.53+30);ctx.stroke();}
+  // Spawn bottles
+  stageTimer++; if(stageTimer>45-s7_filled*1.5&&s7_filled<s7_target){ stageTimer=0; s7_bottles.push({x:W+20,y:H*0.44+(Math.random()-0.5)*30,filled:false,speed:2+Math.random()*1.2}); }
+  // Nozzle
+  ctx.fillStyle='#555';ctx.fillRect(W/2-8,H*0.35,16,60);
+  ctx.fillStyle=NAVY;ctx.beginPath();ctx.arc(W/2,H*0.35,14,0,Math.PI*2);ctx.fill();
+  // Bottles
+  for(var i=s7_bottles.length-1;i>=0;i--){
+    var b=s7_bottles[i]; b.x-=b.speed; if(b.x<-40){ s7_bottles.splice(i,1); continue; }
+    if(!b.filled){
+      ctx.fillStyle='rgba(255,255,255,0.06)';ctx.beginPath();ctx.moveTo(b.x-13,b.y-25);ctx.lineTo(b.x-16,b.y+22);ctx.lineTo(b.x+16,b.y+22);ctx.lineTo(b.x+13,b.y-25);ctx.closePath();ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,0.12)';ctx.stroke();
+      ctx.fillStyle=GOLD;rrect(b.x-14,b.y-32,28,9,3);ctx.fill();
+    } else {
+      ctx.fillStyle='rgba(255,255,255,0.25)';ctx.beginPath();ctx.moveTo(b.x-13,b.y-25);ctx.lineTo(b.x-16,b.y+22);ctx.lineTo(b.x+16,b.y+22);ctx.lineTo(b.x+13,b.y-25);ctx.closePath();ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,0.3)';ctx.stroke();
+      ctx.fillStyle=GOLD;rrect(b.x-14,b.y-32,28,9,3);ctx.fill();
+      ctx.fillStyle='#fff';ctx.font='bold 7px "Segoe UI"';ctx.textAlign='center';ctx.fillText('VITA',b.x,b.y);
     }
   }
+  if(btn(W/2-50,H*0.9,100,40,'FILL','#22c55e')) fillBottle();
+  ctx.fillStyle='#aaa';ctx.font='14px "Segoe UI"';ctx.textAlign='center';ctx.fillText('Filled: '+s7_filled+' / '+s7_target,W/2,H*0.84);
+  if(s7_filled>=s7_target) completeStage(6);
+}
 
-  ctx.globalAlpha=1;
-
-  // Skip hint during hold
-  if(splashPhase===4&&splashTimer>0.3){
-    ctx.fillStyle='rgba(255,255,255,'+(0.3+Math.sin(Date.now()*0.005)*0.2)+')';
-    ctx.font='13px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-    ctx.fillText('Press SPACE or click to skip',W/2,H*0.85);
+function drawStage7(){
+  // PACK THE BOXES — drag bottles into boxes
+  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#fff';ctx.font='bold 20px "Segoe UI"';ctx.textAlign='center';ctx.fillText('Stage 8 - Pack the Boxes',W/2,60);
+  ctx.fillStyle='#aaa';ctx.font='14px "Segoe UI"';ctx.fillText('Drag bottles into the boxes',W/2,85);
+  // Boxes
+  for(var i=0;i<s8_boxes.length;i++){
+    var bx=s8_boxes[i];
+    ctx.fillStyle=bx.full?'rgba(76,175,80,0.3)':'rgba(139,90,43,0.5)';
+    rrect(bx.x,bx.y,bx.w,bx.h,10);ctx.fill();ctx.strokeStyle='#5d4037';ctx.lineWidth=2;ctx.stroke();
+    ctx.fillStyle='#fff';ctx.font='bold 10px "Segoe UI"';ctx.textAlign='center';ctx.fillText(bx.full?'':'BOX',bx.x+bx.w/2,bx.y+bx.h/2+4);
   }
+  // Bottles to drag
+  for(var i=s8_bottles.length-1;i>=0;i--){
+    var b=s8_bottles[i];
+    if(s8_drag===b){ b.x=mouse.x; b.y=mouse.y; }
+    var h=mouse.x>b.x-15&&mouse.x<b.x+15&&mouse.y>b.y-35&&mouse.y<b.y+10;
+    if(mouse.clicked&&h&&!s8_drag){ s8_drag=b; }
+    ctx.fillStyle='rgba(255,255,255,0.3)';ctx.beginPath();ctx.moveTo(b.x-10,b.y-30);ctx.lineTo(b.x-14,b.y+18);ctx.lineTo(b.x+14,b.y+18);ctx.lineTo(b.x+10,b.y-30);ctx.closePath();ctx.fill();
+    ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke();
+    ctx.fillStyle=GOLD;rrect(b.x-12,b.y-38,24,8,3);ctx.fill();
+    ctx.fillStyle='#fff';ctx.font='bold 7px "Segoe UI"';ctx.textAlign='center';ctx.fillText('VITA',b.x,b.y-6);
+    if(h&&!s8_drag) ctx.strokeStyle=GOLD; ctx.lineWidth=2; ctx.stroke();
+  }
+  ctx.fillStyle='#aaa';ctx.font='14px "Segoe UI"';ctx.textAlign='center';ctx.fillText('Packed: '+s8_packed+' / '+s8_target,W/2,H*0.92);
+  if(s8_packed>=s8_target) completeStage(7);
 }
 
-// Skip splash on click/space
-function skipSplash(){
-  if(splashPhase>0&&splashPhase<6){ splashPhase=6; }
+function drawStage8(){
+  // DELIVER — drive truck to houses
+  var grad=ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,'#7eb8da');grad.addColorStop(0.55,'#a3cee8');grad.addColorStop(0.6,'#8bc34a');grad.addColorStop(1,'#558b2f');
+  ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
+  // Road
+  ctx.fillStyle='#555';ctx.fillRect(0,H*0.55,W,H*0.25);
+  ctx.fillStyle='#ff0';ctx.fillRect((s9_truckX*60)%W,H*0.67,20,3);
+  // Delivery points
+  for(var i=0;i<s9_houses.length;i++){
+    var h=s9_houses[i];
+    ctx.fillStyle=NAVY;ctx.beginPath();ctx.arc(h.x,h.y,18,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle=GOLD;ctx.font='bold 10px "Segoe UI"';ctx.textAlign='center';ctx.fillText('V',h.x,h.y+4);
+    if(s9_delivered>i){ ctx.fillStyle='rgba(76,175,80,0.4)';ctx.beginPath();ctx.arc(h.x,h.y,28,0,Math.PI*2);ctx.fill(); }
+  }
+  // Truck
+  if(keys['arrowleft']||keys['a']){ s9_truckX-=3; if(s9_truckX<0) s9_truckX=0; }
+  if(keys['arrowright']||keys['d']){ s9_truckX+=3; if(s9_truckX>W-80) s9_truckX=W-80; }
+  var tx2=s9_truckX,ty2=H*0.52;
+  ctx.fillStyle=NAVY;rrect(tx2,ty2,70,35,6);ctx.fill();
+  ctx.fillStyle='#0D2E66';rrect(tx2-8,ty2+25,86,18,5);ctx.fill();
+  ctx.fillStyle='#333';ctx.beginPath();ctx.arc(tx2+12,ty2+37,7,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(tx2+58,ty2+37,7,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#fff';ctx.fillRect(tx2+48,ty2-14,16,16);
+  ctx.fillStyle=GOLD;ctx.font='bold 10px "Segoe UI"';ctx.textAlign='center';ctx.fillText('VITA',tx2+35,ty2+20);
+  // Deliver
+  for(var i=0;i<s9_houses.length;i++){
+    var h=s9_houses[i];
+    if(i===s9_delivered&&Math.abs(tx2+35-h.x)<30&&Math.abs(ty2+18-h.y)<40){ s9_delivered++; particles.push({x:h.x,y:h.y,vx:0,vy:-4,life:1,decay:0.04,color:GOLD,size:5}); break; }
+  }
+  ctx.fillStyle='rgba(0,0,0,0.5)';rrect(W*0.2,H*0.05,W*0.6,30,8);ctx.fill();
+  ctx.fillStyle='#fff';ctx.font='bold 14px "Segoe UI"';ctx.textAlign='center';
+  ctx.fillText('Drive to each house · Delivered: '+s9_delivered+'/'+s9_target+'  (Arrow keys)',W/2,26);
+  if(s9_delivered>=s9_target) completeStage(8);
 }
+
+function drawVictory(){
+  ctx.fillStyle='#050a14';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle=GOLD;ctx.font='bold '+Math.min(W*0.06,H*0.08)+'px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+  ctx.fillText('MILK DELIVERED!',W/2,H*0.35);
+  ctx.fillStyle='#fff';ctx.font='bold '+Math.min(W*0.03,H*0.04)+'px "Segoe UI"';
+  ctx.fillText('From cow to customer — the Vita way!',W/2,H*0.45);
+  var stages=['Feed Cow ','Milk Cow ','Transport ','Test ','Pasteurize ','Homogenize ','Bottle ','Pack ','Deliver '];
+  for(var i=0;i<stages.length;i++){
+    ctx.fillStyle=i<3?GOLD:'#4ade80';ctx.font='13px "Segoe UI"';
+    ctx.fillText(stages[i],W/2-(stages.length-1)*45+i*90,H*0.58);
+  }
+  if(btn(W/2-80,H*0.7,160,48,'PLAY AGAIN',GOLD)){ stage=0; stageDone=[]; initStage(0); }
+}
+
+// ============ MAIN LOOP ============
 function draw(){
   ctx.clearRect(0,0,W,H);
-
-  // Splash animation overlay
-  if(splashPhase>0&&splashPhase<6){
-    drawSplash();
-    mouse.clicked=false;
-    return;
-  }
-
-  if(stage===0)drawIntro();
-  else if(stage===1)drawStage1();
-  else if(stage===2)drawStage2();
-  else if(stage===3)drawStage3();
-  else if(stage===4)drawStage4();
-  else if(stage===5)drawStage5();
-  else if(stage===6)drawVictory();
-
-  if(stage>0)drawHUD();
-
-  // Global particles
-  for(var i=particles.length-1;i>=0;i--){var p=particles[i];p.x+=p.vx;p.y+=p.vy;p.life-=p.decay;
-    if(p.life<=0){particles.splice(i,1);continue;}
-    ctx.fillStyle=p.color+Math.floor(p.life*255).toString(16).padStart(2,'0');ctx.beginPath();ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);ctx.fill();}
-
-  if(transitionAlpha>0.01&&stage!==6){transitionAlpha+=0.025;
-    ctx.fillStyle='rgba(0,0,0,'+Math.min(1,transitionAlpha)+')';ctx.fillRect(0,0,W,H);
-    ctx.fillStyle=GOLD;ctx.font='bold 20px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';ctx.fillText(transitionText,W/2,H/2);}
-
+  if(stage===0) drawStage0();
+  else if(stage===1) drawStage1();
+  else if(stage===2) drawStage2();
+  else if(stage===3) drawStage3();
+  else if(stage===4) drawStage4();
+  else if(stage===5) drawStage5();
+  else if(stage===6) drawStage6();
+  else if(stage===7) drawStage7();
+  else if(stage===8) drawStage8();
+  else if(stage>=totalStages) drawVictory();
+  if(stage>0&&stage<totalStages) drawHUD();
+  // Particles
+  for(var i=particles.length-1;i>=0;i--){var p=particles[i];p.x+=p.vx;p.y+=p.vy;p.life-=p.decay;if(p.life<=0){particles.splice(i,1);continue;}ctx.fillStyle=p.color+Math.floor(p.life*255).toString(16).padStart(2,'0');ctx.beginPath();ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);ctx.fill();}
+  // Transition overlay
+  if(transitionAlpha>0.01&&stage<totalStages){transitionAlpha+=0.025;ctx.fillStyle='rgba(0,0,0,'+Math.min(1,transitionAlpha)+')';ctx.fillRect(0,0,W,H);ctx.fillStyle=GOLD;ctx.font='bold 18px "Segoe UI"';ctx.textAlign='center';ctx.fillText(transitionText,W/2,H/2);}
   mouse.clicked=false;
 }
-
 function loop(){ draw(); requestAnimationFrame(loop); }
+initStage(0);
 loop();
 })();
 </script>
