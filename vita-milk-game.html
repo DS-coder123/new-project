@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vita — How Milk Is Made</title>
+<style>
+  :root { --gold: #F2C200; --navy: #134B8D; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#000; overflow:hidden; font-family:'Segoe UI',system-ui,sans-serif; }
+  canvas { display:block; margin:0 auto; }
+  #loading { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    color:#fff; font-size:1.2rem; z-index:100; pointer-events:none; transition:opacity 0.4s; }
+  #loading.done { opacity:0; }
+</style>
+</head>
+<body>
+<div id="loading">Loading farm...</div>
+<canvas id="c"></canvas>
+<script>
+(function(){
+var c=document.getElementById('c'), ctx=c.getContext('2d');
+var GOLD='#F2C200', NAVY='#134B8D';
+var W,H;
+
+function resize(){
+  W=Math.min(window.innerWidth,960); H=Math.min(window.innerHeight,640);
+  c.width=W; c.height=H; c.style.width=W+'px'; c.style.height=H+'px';
+}
+window.addEventListener('resize',resize); resize();
+
+// === LOAD IMAGES ===
+var bgImg=new Image(); bgImg.crossOrigin='anonymous';
+var bgLoaded=false;
+bgImg.onload=function(){ bgLoaded=true; startSplash(); };
+bgImg.onerror=function(){ bgLoaded=true; startSplash(); };
+bgImg.src='https://th.bing.com/th/id/OIP.tAw5md2d7zwNhNZDFa59PQHaEo?w=1200&h=800';
+function startSplash(){
+  document.getElementById('loading').classList.add('done');
+  if(!splashStarted){ splashStarted=true; splashPhase=1; splashTimer=0; }
+}
+
+// === STATE ===
+var stage=0, stageDone=[false,false,false,false,false];
+var transitionAlpha=0, transitionText='';
+// Splash animation
+var splashPhase=0;      // 0=wait for load, 1=milk flowing, 2=reveal text, 3=hold, 4=fade out
+var splashTimer=0;
+var splashStarted=false;
+
+// --- Stage 1: Milking ---
+var s1_clicks=0, s1_target=5;
+var s1_pailFill=0;       // 0-1 animation for pail fill level
+var s1_streams=[];        // active milk streams
+var s1_splashes=[];       // splash particles in pail
+var s1_isMilking=false;   // currently pulling milk
+
+// --- Stage 2: Quality ---
+var s2_samples=[], s2_score=0, s2_total=0, s2_current=null, s2_feedback='', s2_fbTimer=0, s2_timer=0;
+
+// --- Stage 3: Pasteurization ---
+var s3_temp=38, s3_zoneTime=0, s3_targetSec=12, s3_heatOn=false, s3_coolOn=false;
+
+// --- Stage 4: Separator ---
+var s4_tilt=0, s4_drops=[], s4_collected=0, s4_target=15;
+
+// --- Stage 5: Bottling ---
+var s5_bottles=[], s5_filled=0, s5_target=10, s5_timer=0;
+
+// --- Particles ---
+var particles=[];
+
+// === INPUT ===
+var mouse={x:0,y:0,down:false,clicked:false};
+var keys={};
+
+c.addEventListener('mousemove',function(e){
+  var r=c.getBoundingClientRect();
+  mouse.x=e.clientX-r.left; mouse.y=e.clientY-r.top;
+});
+c.addEventListener('mousedown',function(e){
+  mouse.down=true; mouse.clicked=true;
+  if(splashPhase>0&&splashPhase<5) skipSplash();
+  e.preventDefault();
+});
+c.addEventListener('mouseup',function(){ mouse.down=false; s1_isMilking=false; });
+c.addEventListener('touchstart',function(e){
+  e.preventDefault();
+  if(splashPhase>0&&splashPhase<5){ skipSplash(); return; }
+  var r=c.getBoundingClientRect();
+  mouse.x=e.touches[0].clientX-r.left; mouse.y=e.touches[0].clientY-r.top;
+  mouse.down=true; mouse.clicked=true;
+},{passive:false});
+c.addEventListener('touchmove',function(e){
+  e.preventDefault(); var r=c.getBoundingClientRect();
+  mouse.x=e.touches[0].clientX-r.left; mouse.y=e.touches[0].clientY-r.top;
+},{passive:false});
+c.addEventListener('touchend',function(){ mouse.down=false; s1_isMilking=false; });
+
+window.addEventListener('keydown',function(e){
+  keys[e.key.toLowerCase()]=true;
+  if(e.key===' '||e.key==='Enter'){
+    if(splashPhase>0&&splashPhase<5){ skipSplash(); }
+    else if(stage===0){ startTransition('Walking to the barn...',1); }
+    else if(stage===1){ s1_isMilking=true; }
+    else if(stage===2&&s2_current){ s2_total++;s2_score++;s2_feedback='✓ Good!';s2_fbTimer=50;genSample(); }
+    else if(stage===5){ fillClosestBottle(); }
+  }
+  if(e.key===' '||e.key==='Enter') e.preventDefault();
+});
+window.addEventListener('keyup',function(e){
+  keys[e.key.toLowerCase()]=false;
+  if(e.key===' '||e.key==='Enter'){ s1_isMilking=false; }
+});
+window.addEventListener('keyup',function(e){ keys[e.key.toLowerCase()]=false; });
+
+// === MILK STREAM SYSTEM ===
+function startMilkStream() {
+  var ur=getUdderRect();
+  // 2 streams from the udder (like real teats)
+  for(var i=0;i<2;i++){
+    s1_streams.push({
+      sx: ur.x + ur.w*(0.3 + i*0.4),
+      sy: ur.y + ur.h - 2,
+      tx: W*0.78 + (i-0.5)*14,  // target: center of pail
+      ty: H*0.66,
+      life: 0,
+      maxLife: 25 + Math.random()*10,
+      width: 3 + Math.random()*2,
+      speed: 0.04 + Math.random()*0.02
+    });
+  }
+}
+
+function spawnSplash(tx, ty) {
+  for(var i=0;i<3;i++){
+    s1_splashes.push({
+      x: tx + (Math.random()-0.5)*20,
+      y: ty - Math.random()*6,
+      vx: (Math.random()-0.5)*2,
+      vy: -1-Math.random()*3,
+      life: 1, decay: 0.04+Math.random()*0.03,
+      size: 1.5+Math.random()*2.5
+    });
+  }
+}
+
+// === STAGE 2: generate sample ===
+function genSample(){ s2_current={good:Math.random()>0.3,alpha:0}; s2_timer=140; }
+
+// === STAGE 5: fill closest bottle ===
+function fillClosestBottle(){
+  var best=null,bestD=Infinity;
+  for(var i=0;i<s5_bottles.length;i++){
+    var b=s5_bottles[i]; if(!b.filled&&b.x>0&&b.x<W){ var d=Math.abs(b.x-W/2); if(d<bestD){best=b;bestD=d;} }
+  }
+  if(best){ best.filled=true; s5_filled++;
+    particles.push({x:best.x,y:best.y+10,vx:(Math.random()-0.5)*3,vy:-3-Math.random()*3,life:1,decay:0.035,color:GOLD,size:4});
+  }
+}
+
+// === TRANSITIONS ===
+function startTransition(text,next){
+  transitionAlpha=0; transitionText=text;
+  setTimeout(function(){ transitionAlpha=1; },40);
+  setTimeout(function(){ stage=next; initStage(next); setTimeout(function(){ transitionAlpha=0; },350); },1300);
+}
+function initStage(n){
+  if(n===1){ s1_clicks=0;s1_pailFill=0;s1_streams=[];s1_splashes=[];s1_isMilking=false; }
+  if(n===2){ s2_samples=[];s2_score=0;s2_total=0;s2_current=null;s2_feedback='';s2_fbTimer=0;genSample(); }
+  if(n===3){ s3_temp=38;s3_zoneTime=0;s3_heatOn=false;s3_coolOn=false; }
+  if(n===4){ s4_tilt=0;s4_drops=[];s4_collected=0; }
+  if(n===5){ s5_bottles=[];s5_filled=0;s5_timer=0; }
+  particles=[];
+}
+function completeStage(n){
+  stageDone[n-1]=true;
+  if(n===5) startTransition('Fresh Vita milk — ready!',6);
+  else { var msgs=['Milk collected! → Quality Lab','Quality passed! → Pasteurization','Pasteurized! → Separator','Processed! → Bottling'];
+    startTransition(msgs[n-1],n+1); }
+}
+
+// ========== DRAWING HELPERS ==========
+function rrect(x,y,w,h,r){
+  ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);
+  ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);
+  ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);
+  ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);
+  ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();
+}
+function drawButton(x,y,w,h,text,color){
+  var hover=mouse.x>x&&mouse.x<x+w&&mouse.y>y&&mouse.y<y+h;
+  rrect(x,y,w,h,12);
+  ctx.fillStyle=hover?'#ffd633':color;ctx.fill();
+  ctx.fillStyle=(color===GOLD)?'#000':'#fff';
+  ctx.font='bold 14px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+  ctx.fillText(text,x+w/2,y+h/2+5);
+  return hover;
+}
+
+// --- Draw background image ---
+function drawBackground(){
+  if(bgLoaded){
+    // Scale to cover with slight zoom to make farm details (cows) bigger
+    var iw=bgImg.width, ih=bgImg.height;
+    var scale=Math.max(W/iw, H/ih)*1.15;
+    var sw=iw*scale, sh=ih*scale;
+    var sx=(W-sw)/2, sy=(H-sh)*0.35; // bias toward upper portion (sky/cows)
+    ctx.drawImage(bgImg, sx, sy, sw, sh);
+  } else {
+    // Fallback
+    var sky=ctx.createLinearGradient(0,0,0,H*0.5);
+    sky.addColorStop(0,'#7eb8da');sky.addColorStop(0.4,'#a3cee8');
+    sky.addColorStop(0.7,'#c5dff2');sky.addColorStop(1,'#a8c898');
+    ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#6d9a3f';ctx.fillRect(0,H*0.55,W,H*0.45);
+  }
+}
+
+// --- Cow position & udder (positioned on farm background) ---
+function getCowBox(){
+  return { cw:Math.min(380,W*0.44), ch:Math.min(380,W*0.44)*0.65, cx:W*0.36, cy:H*0.57 };
+}
+function getUdderRect(){
+  var cb=getCowBox();
+  return { x:cb.cx-cb.cw*0.06, y:cb.cy+cb.ch*0.28, w:cb.cw*0.14, h:cb.ch*0.12 };
+}
+
+// --- HUD ---
+function drawHUD(){
+  ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(0,0,W,44);
+  ctx.fillStyle='#fff';ctx.font='bold 14px "Segoe UI",system-ui,sans-serif';ctx.textAlign='left';
+  ctx.fillText('VITA',14,30);ctx.fillStyle=GOLD;ctx.fillText('HOW MILK IS MADE',54,30);
+  for(var i=0;i<5;i++){
+    var dx=W-140+i*24;
+    ctx.beginPath();ctx.arc(dx,22,7,0,Math.PI*2);
+    if(stageDone[i]){ ctx.fillStyle=GOLD;ctx.fill();ctx.shadowColor=GOLD;ctx.shadowBlur=6;ctx.fill();ctx.shadowBlur=0; }
+    else { ctx.fillStyle='#444';ctx.fill(); }
+  }
+}
+
+// ========== STAGES ==========
+
+// === INTRO ===
+function drawIntro(){
+  drawBackground();
+  // Light overlay for text readability on farm photo
+  ctx.fillStyle='rgba(0,0,0,0.25)';ctx.fillRect(0,0,W,H);
+
+  // Text card
+  rrect(W*0.1,H*0.10,W*0.8,H*0.18,16);
+  ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fill();
+
+  ctx.fillStyle='#fff';ctx.font='bold 28px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+  ctx.fillText('How Vita Milk Is Made',W/2,H*0.18);
+  ctx.fillStyle='#ccc';ctx.font='15px "Segoe UI",system-ui,sans-serif';
+  ctx.fillText('From the farm to your fridge — 5 interactive stages',W/2,H*0.18+28);
+
+  ctx.fillStyle='#ddd';ctx.font='13px "Segoe UI",system-ui,sans-serif';
+  ctx.fillText('🐄 Milking → 🔬 Quality → 🌡️ Pasteurize → ⚙️ Separate → 📦 Bottle',W/2,H*0.18+50);
+
+  var hov=drawButton(W/2-90,H*0.36,180,48,'🐄 START MILKING',GOLD);
+  if(hov&&mouse.clicked) startTransition('Walking to the barn...',1);
+}
+
+// === STAGE 1: MILKING (realistic) ===
+function drawStage1(){
+  drawBackground();
+
+  // Update milking
+  var ur=getUdderRect();
+  var onUdder=mouse.x>ur.x&&mouse.x<ur.x+ur.w&&mouse.y>ur.y&&mouse.y<ur.y+ur.h;
+  if((onUdder&&mouse.down)||s1_isMilking){
+    // Create new streams
+    if(s1_streams.length===0||Math.random()<0.3) startMilkStream();
+    // Increment progress
+    s1_clicks+=0.03;
+    if(s1_clicks>=s1_target) s1_clicks=s1_target;
+    s1_pailFill=Math.min(1,s1_pailFill+0.008);
+  }
+
+  // Udder highlight
+  if(onUdder||s1_isMilking){
+    ctx.strokeStyle=GOLD+'aa';ctx.lineWidth=3;ctx.setLineDash([4,3]);
+    rrect(ur.x-2,ur.y-2,ur.w+4,ur.h+4,10);ctx.stroke();
+    ctx.setLineDash([]);ctx.lineWidth=1;
+  }
+
+  // === MILK STREAMS ===
+  for(var i=s1_streams.length-1;i>=0;i--){
+    var s=s1_streams[i];
+    s.life+=s.speed;
+
+    if(s.life>=1){
+      // Stream reached pail - spawn splash
+      spawnSplash(s.tx,s.ty);
+      s1_streams.splice(i,1);
+      continue;
+    }
+
+    // Bezier curve from udder to pail
+    var t=s.life;
+    var cx1=s.sx+(s.tx-s.sx)*0.3, cy1=s.sy+60;
+    var cx2=s.tx-(s.tx-s.sx)*0.2, cy2=s.ty-40;
+    var x=Math.pow(1-t,3)*s.sx+3*Math.pow(1-t,2)*t*cx1+3*(1-t)*t*t*cx2+Math.pow(t,3)*s.tx;
+    var y=Math.pow(1-t,3)*s.sy+3*Math.pow(1-t,2)*t*cy1+3*(1-t)*t*t*cy2+Math.pow(t,3)*s.ty;
+
+    // Draw stream segment (only the part that's alive so far)
+    ctx.strokeStyle='rgba(255,255,255,0.6)';ctx.lineWidth=s.width;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(s.sx,s.sy);
+
+    var steps=20;
+    for(var j=1;j<=steps*t;j++){
+      var tt=j/steps;
+      var px=Math.pow(1-tt,3)*s.sx+3*Math.pow(1-tt,2)*tt*cx1+3*(1-tt)*tt*tt*cx2+Math.pow(tt,3)*s.tx;
+      var py=Math.pow(1-tt,3)*s.sy+3*Math.pow(1-tt,2)*tt*cy1+3*(1-tt)*tt*tt*cy2+Math.pow(tt,3)*s.ty;
+      ctx.lineTo(px,py);
+    }
+    ctx.stroke();
+
+    // Drop at tip
+    ctx.fillStyle='rgba(255,255,255,0.8)';ctx.beginPath();
+    ctx.arc(x,y,s.width*0.7,0,Math.PI*2);ctx.fill();
+  }
+
+  // === SPLASHES ===
+  for(var i=s1_splashes.length-1;i>=0;i--){
+    var sp=s1_splashes[i];
+    sp.x+=sp.vx;sp.y+=sp.vy;sp.life-=sp.decay;
+    if(sp.life<=0){ s1_splashes.splice(i,1); continue; }
+    ctx.fillStyle='rgba(255,255,255,'+sp.life+')';
+    ctx.beginPath();ctx.arc(sp.x,sp.y,sp.size*sp.life,0,Math.PI*2);ctx.fill();
+  }
+
+  // === PAIL (right side) ===
+  var px=W*0.78, py=H*0.66, pw=80, ph=90;
+  // Pail body
+  var pailGrad=ctx.createLinearGradient(px-pw/2,0,px+pw/2,0);
+  pailGrad.addColorStop(0,'#8B7355');pailGrad.addColorStop(0.3,'#a0896c');pailGrad.addColorStop(0.7,'#8B7355');pailGrad.addColorStop(1,'#6B5335');
+  ctx.fillStyle=pailGrad;
+  ctx.beginPath();ctx.moveTo(px-pw/2,py-ph/2);ctx.lineTo(px-pw/2-10,py+ph/2);
+  ctx.lineTo(px+pw/2+10,py+ph/2);ctx.lineTo(px+pw/2,py-ph/2);ctx.closePath();ctx.fill();
+  ctx.strokeStyle='#5a4530';ctx.lineWidth=2;ctx.stroke();
+
+  // Milk inside pail (filling up)
+  var fillH=s1_pailFill*(ph-8);
+  ctx.fillStyle='rgba(255,255,255,0.75)';
+  ctx.beginPath();
+  var bottomLeft=py+ph/2-2, bottomRight=py+ph/2-2;
+  var topLeft=bottomLeft-fillH, topRight=bottomRight-fillH;
+  ctx.moveTo(px-pw/2+3,bottomLeft);ctx.lineTo(px-pw/2-6,topLeft);
+  ctx.lineTo(px+pw/2+6,topRight);ctx.lineTo(px+pw/2-3,bottomRight);ctx.closePath();ctx.fill();
+
+  // Milk surface shimmer
+  if(s1_pailFill>0){
+    ctx.fillStyle='rgba(255,255,255,0.3)';
+    ctx.beginPath();ctx.ellipse(px,py+ph/2-fillH,pw/2-4,4+Math.sin(Date.now()/300)*1.5,0,0,Math.PI*2);ctx.fill();
+  }
+
+  // Handle
+  ctx.strokeStyle='#777';ctx.lineWidth=4;ctx.beginPath();
+  ctx.arc(px,py-ph/2-4,pw*0.5,Math.PI*0.7,Math.PI*0.3);ctx.stroke();
+
+  // VITA label
+  ctx.fillStyle=GOLD;ctx.font='bold 11px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+  ctx.fillText('VITA',px,py-ph/2-16);
+
+  // Instruction
+  if(s1_clicks<s1_target){
+    ctx.fillStyle='rgba(0,0,0,0.5)';rrect(W*0.05,10,W*0.55,36,10);ctx.fill();
+    ctx.fillStyle='#fff';ctx.font='bold 13px "Segoe UI",system-ui,sans-serif';ctx.textAlign='left';
+    ctx.fillText('🐄 Click & hold near the cow to milk  |  or hold SPACE',W*0.08,34);
+  }
+
+  // Progress bar at bottom
+  var barW=200;
+  ctx.fillStyle='rgba(0,0,0,0.5)';rrect(W/2-barW/2,H-30,barW,10,5);ctx.fill();
+  ctx.fillStyle=s1_clicks>=s1_target?'#4ade80':GOLD;
+  rrect(W/2-barW/2+1,H-29,(barW-2)*Math.min(1,s1_clicks/s1_target),8,4);ctx.fill();
+  ctx.fillStyle='#fff';ctx.font='11px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+  ctx.fillText(Math.round(s1_clicks/s1_target*100)+'%',W/2,H-38);
+
+  if(s1_clicks>=s1_target) completeStage(1);
+}
+
+// === STAGE 2: QUALITY ===
+function drawStage2(){
+  drawBackground();
+  ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(0,0,W,H);
+
+  rrect(W*0.1,H*0.42,W*0.8,H*0.4,20);ctx.fillStyle='rgba(20,20,30,0.88)';ctx.fill();
+  ctx.strokeStyle='#333';ctx.lineWidth=1;ctx.stroke();
+
+  ctx.fillStyle='#fff';ctx.font='bold 19px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+  ctx.fillText('🔬 Stage 2 — Quality Check',W/2,78);
+  ctx.fillStyle='#aaa';ctx.font='13px "Segoe UI",system-ui,sans-serif';
+  ctx.fillText('Is the milk clean? [Click ✓/✗ or SPACE=Good]',W/2,100);
+
+  if(s2_current){
+    s2_current.alpha=Math.min(1,s2_current.alpha+0.06);var a=s2_current.alpha;
+    var sx=W/2,sy=H*0.55;
+    ctx.fillStyle='rgba(255,255,255,0.06)';
+    ctx.beginPath();ctx.moveTo(sx-22,sy+35);ctx.lineTo(sx-28,sy-25);ctx.lineTo(sx+28,sy-25);ctx.lineTo(sx+22,sy+35);ctx.closePath();ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=2;ctx.stroke();
+    ctx.fillStyle=s2_current.good?'rgba(255,255,255,'+(0.8*a)+')':'rgba(220,210,190,'+(0.8*a)+')';
+    ctx.beginPath();ctx.moveTo(sx-19,sy+30);ctx.lineTo(sx-25,sy-8);ctx.lineTo(sx+25,sy-8);ctx.lineTo(sx+19,sy+30);ctx.closePath();ctx.fill();
+
+    var accH=drawButton(W*0.32,H*0.80,110,44,'✓ GOOD','#22c55e');
+    var rejH=drawButton(W*0.54,H*0.80,110,44,'✗ BAD','#ef4444');
+    if(mouse.clicked){ s2_total++;
+      if(accH){ s2_score++;s2_feedback=s2_current.good?'✓ Correct!':'✗ That was bad...'; }
+      else if(rejH){ if(!s2_current.good)s2_score++;s2_feedback=s2_current.good?'✗ It was good!':'✓ Rejected!'; }
+      s2_fbTimer=55;genSample();
+    }
+    s2_timer--;if(s2_timer<=0){ s2_total++;s2_feedback='⏰ Too slow!';s2_fbTimer=45;genSample(); }
+    var tb=220*(s2_timer/140);
+    ctx.fillStyle=s2_timer<30?'#ef4444':'#666';ctx.fillRect(W/2-110,H*0.72,tb,6);
+    ctx.strokeStyle='#444';ctx.strokeRect(W/2-110,H*0.72,220,6);
+  }
+  if(s2_fbTimer>0){ s2_fbTimer--;
+    ctx.fillStyle=s2_feedback[0]==='✓'?'#4ade80':'#f87171';
+    ctx.font='bold 15px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+    ctx.fillText(s2_feedback,W/2,H*0.90);
+  }
+  ctx.fillStyle='#aaa';ctx.font='13px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+  ctx.fillText(s2_score+' / '+Math.max(s2_total,1)+' correct · '+Math.max(0,8-s2_total)+' left',W/2,H*0.94);
+  if(s2_total>=8) completeStage(2);
+}
+
+// === STAGE 3: PASTEURIZATION ===
+function drawStage3(){
+  drawBackground();ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#fff';ctx.font='bold 19px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+  ctx.fillText('🌡️ Stage 3 — Pasteurization',W/2,78);
+  ctx.fillStyle='#aaa';ctx.font='13px "Segoe UI",system-ui,sans-serif';
+  ctx.fillText('Hold at 72°C for '+s3_targetSec+' seconds',W/2,100);
+
+  var tx=W*0.22,ty=H*0.28,tw=55,th=210;
+  rrect(tx,ty,tw,th,28);var tGrad=ctx.createLinearGradient(0,ty+th,0,ty);
+  tGrad.addColorStop(0,'#22c55e');tGrad.addColorStop(0.3,'#22c55e');tGrad.addColorStop(0.3,GOLD);
+  tGrad.addColorStop(0.5,GOLD);tGrad.addColorStop(0.5,'#ef4444');tGrad.addColorStop(1,'#ef4444');
+  ctx.fillStyle=tGrad;ctx.fill();
+  ctx.fillStyle='#ef4444';rrect(tx+8,ty+th-th*(s3_temp/100),tw-16,th*(s3_temp/100),20);ctx.fill();
+  ctx.fillStyle='rgba(34,197,94,0.12)';ctx.fillRect(tx-28,ty+th*0.28,tw+56,th*0.18);
+  ctx.fillStyle='#4ade80';ctx.font='10px "Segoe UI",system-ui,sans-serif';ctx.textAlign='right';
+  ctx.fillText('72°C',tx-5,ty+th*0.28+20);
+  ctx.fillStyle='#fff';ctx.font='bold 22px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+  ctx.fillText(Math.round(s3_temp)+'°C',tx+tw/2,ty+th+28);
+
+  var tkX=W*0.50,tkY=H*0.35,tkW=170,tkH=130;
+  rrect(tkX,tkY,tkW,tkH,18);ctx.fillStyle='rgba(255,255,255,0.04)';ctx.fill();
+  ctx.strokeStyle='#444';ctx.lineWidth=2;ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,0.25)';ctx.beginPath();
+  ctx.moveTo(tkX+4,tkY+tkH-4);ctx.lineTo(tkX+4,tkY+tkH-90);ctx.lineTo(tkX+tkW-4,tkY+tkH-90);ctx.lineTo(tkX+tkW-4,tkY+tkH-4);ctx.fill();
+  if(s3_temp>45){for(var i=0;i<Math.floor(s3_temp/15);i++){
+    var bx=tkX+30+Math.sin(Date.now()/700+i)*40,by_=tkY+tkH-92-((Date.now()/180+i*45)%82);
+    ctx.fillStyle='rgba(255,255,255,'+(0.15+Math.sin(Date.now()/250+i)*0.1)+')';
+    ctx.beginPath();ctx.arc(bx,by_,3,0,Math.PI*2);ctx.fill();
+  }}
+  ctx.fillStyle='#888';ctx.font='11px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+  ctx.fillText('PASTEURIZER',tkX+tkW/2,tkY+tkH+18);
+
+  var inZone=s3_temp>=67&&s3_temp<=77;
+  if(inZone){ s3_zoneTime+=1/60; var left=Math.max(0,s3_targetSec-s3_zoneTime);
+    ctx.fillStyle='#4ade80';ctx.font='bold 14px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+    ctx.fillText('IN ZONE · '+left.toFixed(1)+'s remaining',W/2,H*0.78);
+  } else { ctx.fillStyle='#f87171';ctx.font='13px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+    ctx.fillText('Out of zone!',W/2,H*0.78); }
+
+  var heatH=drawButton(W*0.28,H*0.85,120,44,'🔥 HEAT','#ef4444');
+  var coolH=drawButton(W*0.56,H*0.85,120,44,'❄ COOL','#3b82f6');
+  s3_heatOn=heatH&&mouse.down;s3_coolOn=coolH&&mouse.down;
+  if(s3_heatOn)s3_temp=Math.min(100,s3_temp+0.55);
+  if(s3_coolOn)s3_temp=Math.max(0,s3_temp-0.5);
+  if(!s3_heatOn&&!s3_coolOn)s3_temp+=(35-s3_temp)*0.007;
+  if(s3_zoneTime>=s3_targetSec)completeStage(3);
+}
+
+// === STAGE 4: SEPARATOR ===
+function drawStage4(){
+  drawBackground();ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#fff';ctx.font='bold 19px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+  ctx.fillText('⚙️ Stage 4 — Cream Separator',W/2,78);
+  ctx.fillStyle='#aaa';ctx.font='13px "Segoe UI",system-ui,sans-serif';
+  ctx.fillText('← → arrow keys to tilt separator',W/2,100);
+
+  var sx=W/2,sy=H*0.46;
+  rrect(sx-55,sy-28,110,75,16);ctx.fillStyle='#1a1a2e';ctx.fill();ctx.strokeStyle='#444';ctx.lineWidth=2;ctx.stroke();
+  ctx.save();ctx.translate(sx,sy);ctx.rotate(s4_tilt*0.35);
+  ctx.fillStyle='#333';ctx.beginPath();ctx.ellipse(0,0,42,16,0,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#555';ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,0.12)';ctx.beginPath();ctx.arc(0,0,9,0,Math.PI*2);ctx.fill();ctx.restore();
+  ctx.fillStyle='#555';ctx.beginPath();ctx.moveTo(sx-22,sy-33);ctx.lineTo(sx+22,sy-33);ctx.lineTo(sx+8,sy-18);ctx.lineTo(sx-8,sy-18);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#fff8e0';rrect(sx-82+s4_tilt*10,sy+48,55,18,8);ctx.fill();
+  ctx.fillStyle='#888';ctx.font='10px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';ctx.fillText('CREAM',sx-54+s4_tilt*10,sy+78);
+  ctx.fillStyle='#fff';rrect(sx+27+s4_tilt*10,sy+48,55,18,8);ctx.fill();
+  ctx.fillStyle='#888';ctx.fillText('VITA MILK',sx+54+s4_tilt*10,sy+78);
+
+  var bx=sx+54+s4_tilt*10+28,by=sy+42;
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(bx-16,by-26);ctx.lineTo(bx-20,by+28);ctx.lineTo(bx+20,by+28);ctx.lineTo(bx+16,by-26);ctx.closePath();ctx.fill();
+  ctx.strokeStyle='#ddd';ctx.lineWidth=2;ctx.stroke();
+  ctx.fillStyle=GOLD;rrect(bx-18,by-36,36,12,5);ctx.fill();
+  ctx.fillStyle=NAVY;ctx.font='bold 8px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';ctx.fillText('VITA',bx,by+2);ctx.fillText('3.2%',bx,by+14);
+
+  if(Math.random()<0.22){ s4_drops.push({x:sx-10+Math.random()*20,y:sy-34,vx:s4_tilt*2.8+(Math.random()-0.5)*0.6,vy:2.5+Math.random()*1.5,life:1}); }
+  for(var i=s4_drops.length-1;i>=0;i--){ var d=s4_drops[i];
+    d.x+=d.vx;d.y+=d.vy;d.life-=0.02;if(d.life<=0||d.y>H){s4_drops.splice(i,1);continue;}
+    ctx.fillStyle='rgba(255,255,255,'+d.life+')';ctx.beginPath();ctx.arc(d.x,d.y,4,0,Math.PI*2);ctx.fill();
+    if(d.y>by-26&&d.y<by+28&&d.x>bx-22&&d.x<bx+24){ s4_collected++;s4_drops.splice(i,1);
+      particles.push({x:bx,y:by,vx:(Math.random()-0.5)*2,vy:-2-Math.random()*2,life:1,decay:0.035,color:'#fff',size:3}); }
+  }
+  var fr=s4_collected/s4_target;ctx.fillStyle='rgba(255,255,255,'+(0.25+fr*0.55)+')';ctx.fillRect(bx-17,by+28-fr*52,34,fr*52);
+  ctx.fillStyle='#fff';ctx.font='bold 13px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+  ctx.fillText(s4_collected+' / '+s4_target+' drops',W/2,H*0.80);
+  if(keys['arrowleft']||keys['a'])s4_tilt=Math.max(-1,s4_tilt-0.04);
+  if(keys['arrowright']||keys['d'])s4_tilt=Math.min(1,s4_tilt+0.04);
+  if(!keys['arrowleft']&&!keys['a']&&!keys['arrowright']&&!keys['d'])s4_tilt*=0.93;
+  if(s4_collected>=s4_target)completeStage(4);
+}
+
+// === STAGE 5: BOTTLING ===
+function drawStage5(){
+  drawBackground();ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#fff';ctx.font='bold 19px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+  ctx.fillText('📦 Stage 5 — Bottling',W/2,78);
+  ctx.fillStyle='#aaa';ctx.font='13px "Segoe UI",system-ui,sans-serif';
+  ctx.fillText('Click bottles or SPACE to fill!',W/2,100);
+
+  ctx.fillStyle='#1a1a1a';ctx.fillRect(0,H*0.44,W,70);
+  ctx.strokeStyle='#333';for(var x=(Date.now()/18)%40-40;x<W;x+=40){ctx.beginPath();ctx.moveTo(x,H*0.44+35);ctx.lineTo(x+20,H*0.44+70);ctx.stroke();}
+  s5_timer++;if(s5_timer>55-s5_filled*2.5&&s5_filled<s5_target){s5_timer=0;s5_bottles.push({x:W+30,y:H*0.46+(Math.random()-0.5)*35,filled:false,speed:1.6+Math.random()*0.9});}
+  for(var i=s5_bottles.length-1;i>=0;i--){var b=s5_bottles[i];b.x-=b.speed;if(b.x<-70){s5_bottles.splice(i,1);continue;}
+    if(!b.filled){ctx.fillStyle='rgba(255,255,255,0.08)';ctx.beginPath();ctx.moveTo(b.x-18,b.y-30);ctx.lineTo(b.x-22,b.y+32);ctx.lineTo(b.x+22,b.y+32);ctx.lineTo(b.x+18,b.y-30);ctx.closePath();ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,0.15)';ctx.lineWidth=1.5;ctx.stroke();ctx.fillStyle=GOLD;rrect(b.x-20,b.y-40,40,11,4);ctx.fill();
+      ctx.fillStyle='#555';ctx.font='bold 9px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';ctx.fillText('VITA',b.x,b.y+4);ctx.fillText('QUMËSHT',b.x,b.y+16);
+      var bHov=mouse.x>b.x-24&&mouse.x<b.x+24&&mouse.y>b.y-40&&mouse.y<b.y+36;
+      if(bHov){ctx.strokeStyle=GOLD;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(b.x-19,b.y-31);ctx.lineTo(b.x-23,b.y+33);ctx.lineTo(b.x+23,b.y+33);ctx.lineTo(b.x+19,b.y-31);ctx.closePath();ctx.stroke();
+        if(mouse.clicked){b.filled=true;s5_filled++;particles.push({x:b.x,y:b.y,vx:(Math.random()-0.5)*3,vy:-3-Math.random()*3,life:1,decay:0.035,color:GOLD,size:4});}}
+    } else {ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(b.x-18,b.y-30);ctx.lineTo(b.x-22,b.y+32);ctx.lineTo(b.x+22,b.y+32);ctx.lineTo(b.x+18,b.y-30);ctx.closePath();ctx.fill();
+      ctx.strokeStyle='#ddd';ctx.lineWidth=1.5;ctx.stroke();ctx.fillStyle='rgba(255,255,255,0.5)';ctx.fillRect(b.x-14,b.y-4,28,34);
+      ctx.fillStyle=GOLD;rrect(b.x-20,b.y-40,40,11,4);ctx.fill();ctx.fillStyle=NAVY;ctx.font='bold 9px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+      ctx.fillText('VITA',b.x,b.y+4);ctx.fillText('3.2%',b.x,b.y+16);ctx.fillStyle='#4ade80';ctx.font='13px sans-serif';ctx.fillText('✓',b.x,b.y-44);}
+  }
+  ctx.fillStyle='#fff';ctx.font='bold 14px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+  ctx.fillText(s5_filled+' / '+s5_target+' bottles',W/2,H*0.83);
+  if(s5_filled>=s5_target)completeStage(5);
+}
+
+// === VICTORY ===
+function drawVictory(){
+  drawBackground();ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle=GOLD;ctx.font='bold 28px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+  ctx.fillText('🥛 Milk Production Complete!',W/2,H*0.20);
+  ctx.fillStyle='#fff';ctx.font='16px "Segoe UI",system-ui,sans-serif';
+  ctx.fillText('Vita Qumësht — Fresh from Farm to Fridge',W/2,H*0.20+38);
+  var steps=['🐄 Milked the cows','🔬 Passed quality check','🌡️ Pasteurized at 72°C','⚙️ Separated cream','📦 Bottled & sealed'];
+  ctx.font='14px "Segoe UI",system-ui,sans-serif';steps.forEach(function(s,i){ctx.fillStyle=stageDone[i]?'#4ade80':'#555';ctx.fillText((stageDone[i]?'✓ ':'○ ')+s,W/2,H*0.36+i*26);});
+  var vx=W/2,vy=H*0.72;ctx.fillStyle='#fff';
+  ctx.beginPath();ctx.moveTo(vx-22,vy-42);ctx.lineTo(vx-28,vy+48);ctx.lineTo(vx+28,vy+48);ctx.lineTo(vx+22,vy-42);ctx.closePath();ctx.fill();
+  ctx.strokeStyle='#ddd';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle=GOLD;rrect(vx-26,vy-54,52,16,6);ctx.fill();
+  ctx.fillStyle=NAVY;ctx.font='bold 14px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';ctx.fillText('VITA',vx,vy+8);ctx.fillText('QUMËSHT',vx,vy+28);
+  var repH=drawButton(W/2-70,H*0.93,140,44,'PLAY AGAIN',GOLD);if(repH&&mouse.clicked)location.reload();
+}
+
+// === SPLASH ANIMATION (milk reveal VITA) ===
+function drawSplash(){
+  // Phases: 1=milk flowing left→right, 2=text reveal, 3=hold, 4=fade out
+  if(splashPhase===1){
+    splashTimer+=0.012;
+    if(splashTimer>=1){ splashPhase=2; splashTimer=0; }
+  } else if(splashPhase===2){
+    splashTimer+=0.008;
+    if(splashTimer>=1){ splashPhase=3; splashTimer=0; }
+  } else if(splashPhase===3){
+    splashTimer+=1/60;
+    if(splashTimer>=1.2){ splashPhase=4; splashTimer=0; }
+  } else if(splashPhase===4){
+    splashTimer+=0.025;
+    if(splashTimer>=1){ splashPhase=5; } // done
+  }
+
+  // Background: dark navy
+  ctx.fillStyle='#050a14';ctx.fillRect(0,0,W,H);
+
+  if(splashPhase>=4){
+    // Fade out everything
+    var fadeAlpha=1-splashTimer;
+    ctx.globalAlpha=fadeAlpha;
+  }
+
+  // Milk wave: progresses left to right
+  var waveProgress=splashPhase===1?splashTimer:1;
+  var textAlpha=splashPhase>=2?Math.min(1,splashPhase===2?splashTimer:1):0;
+
+  // Milk pool - fills from left
+  var milkRight=W*waveProgress;
+  var milkTop=H*0.38;
+
+  // Main milk body
+  ctx.fillStyle='rgba(255,255,255,0.92)';
+  ctx.beginPath();
+  ctx.moveTo(0,milkTop);
+  // Wavy top edge
+  for(var x=0;x<=milkRight;x+=4){
+    var wy=milkTop+Math.sin(x*0.04+Date.now()*0.004)*6+Math.sin(x*0.08+Date.now()*0.006)*3;
+    ctx.lineTo(x,wy);
+  }
+  ctx.lineTo(milkRight,H);
+  ctx.lineTo(0,H);
+  ctx.closePath();ctx.fill();
+
+  // Milk foam on top
+  ctx.fillStyle='rgba(255,255,255,0.5)';
+  ctx.beginPath();
+  for(var x=0;x<=milkRight;x+=4){
+    var fy=milkTop+Math.sin(x*0.04+Date.now()*0.004)*6+Math.sin(x*0.08+Date.now()*0.006)*3-8-Math.random()*3;
+    ctx.lineTo(x,fy);
+  }
+  ctx.lineTo(milkRight,milkTop-10);
+  ctx.lineTo(0,milkTop-10);
+  ctx.closePath();ctx.fill();
+
+  // VITA text revealed by milk
+  if(textAlpha>0){
+    ctx.save();
+    // Clip to milk region
+    ctx.beginPath();ctx.rect(0,milkTop,milkRight,H-milkTop);ctx.clip();
+
+    // Glow behind text
+    var glowGrad=ctx.createRadialGradient(W/2,H*0.55,20,W/2,H*0.55,W*0.6);
+    glowGrad.addColorStop(0,'rgba(19,75,141,'+(0.5*textAlpha)+')');
+    glowGrad.addColorStop(0.5,'rgba(19,75,141,'+(0.2*textAlpha)+')');
+    glowGrad.addColorStop(1,'transparent');
+    ctx.fillStyle=glowGrad;ctx.fillRect(0,milkTop,W,H-milkTop);
+
+    // Main VITA text
+    ctx.fillStyle='rgba(19,75,141,'+textAlpha+')';
+    ctx.font='bold 90px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+    ctx.fillText('VITA',W/2,H*0.62);
+
+    // Text outline for crispness
+    ctx.strokeStyle='rgba(8,45,85,'+(textAlpha*0.5)+')';ctx.lineWidth=3;
+    ctx.strokeText('VITA',W/2,H*0.62);
+
+    // Subtitle
+    ctx.fillStyle='rgba(242,194,0,'+(textAlpha*0.9)+')';
+    ctx.font='bold 18px "Segoe UI",system-ui,sans-serif';
+    ctx.fillText('FRESH DAIRY · FROM FARM TO FRIDGE',W/2,H*0.72);
+
+    ctx.restore();
+  }
+
+  // Milk drips on right edge
+  if(waveProgress<1){
+    var dripX=milkRight;
+    ctx.fillStyle='rgba(255,255,255,0.7)';
+    for(var i=0;i<3;i++){
+      var dy=milkTop+60+i*50+Math.sin(Date.now()*0.01+i)*8;
+      ctx.beginPath();ctx.arc(dripX,dy,5+i*2,0,Math.PI*2);ctx.fill();
+      // Drip stream
+      ctx.fillStyle='rgba(255,255,255,0.3)';
+      ctx.fillRect(dripX-2,dy,H*0.03,12+i*8);
+      ctx.fillStyle='rgba(255,255,255,0.7)';
+    }
+  }
+
+  ctx.globalAlpha=1;
+
+  // Skip hint after hold phase
+  if(splashPhase===3&&splashTimer>0.6){
+    ctx.fillStyle='rgba(255,255,255,'+(0.3+Math.sin(Date.now()*0.005)*0.2)+')';
+    ctx.font='12px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+    ctx.fillText('Press SPACE or click to skip',W/2,H*0.85);
+  }
+}
+
+// Skip splash on click/space
+function skipSplash(){
+  if(splashPhase>0&&splashPhase<5){ splashPhase=5; }
+}
+function draw(){
+  ctx.clearRect(0,0,W,H);
+
+  // Splash animation overlay
+  if(splashPhase>0&&splashPhase<5){
+    drawSplash();
+    mouse.clicked=false;
+    return;
+  }
+
+  if(stage===0)drawIntro();
+  else if(stage===1)drawStage1();
+  else if(stage===2)drawStage2();
+  else if(stage===3)drawStage3();
+  else if(stage===4)drawStage4();
+  else if(stage===5)drawStage5();
+  else if(stage===6)drawVictory();
+
+  if(stage>0)drawHUD();
+
+  // Global particles
+  for(var i=particles.length-1;i>=0;i--){var p=particles[i];p.x+=p.vx;p.y+=p.vy;p.life-=p.decay;
+    if(p.life<=0){particles.splice(i,1);continue;}
+    ctx.fillStyle=p.color+Math.floor(p.life*255).toString(16).padStart(2,'0');ctx.beginPath();ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);ctx.fill();}
+
+  if(transitionAlpha>0.01&&stage!==6){transitionAlpha+=0.012;
+    ctx.fillStyle='rgba(0,0,0,'+Math.min(1,transitionAlpha)+')';ctx.fillRect(0,0,W,H);
+    ctx.fillStyle=GOLD;ctx.font='bold 20px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';ctx.fillText(transitionText,W/2,H/2);}
+
+  mouse.clicked=false;
+}
+
+function loop(){ draw(); requestAnimationFrame(loop); }
+loop();
+})();
+</script>
+</body>
+</html>

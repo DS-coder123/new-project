@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Star Learner — Educational Space Adventure</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    overflow: hidden;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  canvas { display: block; }
+
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 24px; pointer-events: none;
+  }
+  #hud > * { pointer-events: auto; }
+  .hud-item {
+    color: #fff; font-size: 0.9rem; font-weight: 600;
+    background: rgba(255,255,255,0.06); backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px; padding: 10px 18px;
+    letter-spacing: 0.02em;
+  }
+  .hud-stars { color: #ffd700; }
+  #hud-left { display: flex; gap: 10px; }
+  #hud-right { display: flex; gap: 10px; }
+
+  #quiz-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);
+    display: none; align-items: center; justify-content: center;
+  }
+  #quiz-overlay.active { display: flex; }
+  #quiz-panel {
+    background: #111; border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 20px; padding: 36px; max-width: 560px; width: 90%;
+    box-shadow: 0 0 60px rgba(100,140,255,0.15);
+  }
+  #quiz-category {
+    font-size: 0.75rem; text-transform: uppercase;
+    letter-spacing: 0.12em; color: #7aa2f7; margin-bottom: 6px;
+  }
+  #quiz-planet {
+    font-size: 1.6rem; font-weight: 700; color: #fff; margin-bottom: 4px;
+  }
+  #quiz-question {
+    font-size: 1.05rem; color: #ddd; margin: 18px 0 22px;
+    line-height: 1.5;
+  }
+  #quiz-answers { display: flex; flex-direction: column; gap: 10px; }
+  .quiz-btn {
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15);
+    color: #ccc; padding: 14px 18px; border-radius: 12px;
+    font-size: 0.95rem; cursor: pointer; text-align: left;
+    transition: all 0.2s; font-family: inherit;
+  }
+  .quiz-btn:hover { background: rgba(255,255,255,0.1); color: #fff; border-color: rgba(255,255,255,0.3); }
+  .quiz-btn.correct { background: rgba(34,197,94,0.2); border-color: #22c55e; color: #4ade80; }
+  .quiz-btn.wrong { background: rgba(239,68,68,0.2); border-color: #ef4444; color: #f87171; }
+  .quiz-btn:disabled { pointer-events: none; opacity: 0.6; }
+  .quiz-btn:disabled.correct { opacity: 1; }
+  #quiz-feedback { margin-top: 16px; font-size: 0.9rem; font-weight: 600; min-height: 22px; }
+
+  #victory-overlay {
+    position: fixed; inset: 0; z-index: 200;
+    background: rgba(0,0,0,0.9); backdrop-filter: blur(12px);
+    display: none; align-items: center; justify-content: center;
+    flex-direction: column; gap: 20px;
+  }
+  #victory-overlay.active { display: flex; }
+  #victory-title { font-size: 2.4rem; font-weight: 800; color: #ffd700; text-align: center; }
+  #victory-sub { font-size: 1.1rem; color: #aaa; text-align: center; max-width: 400px; line-height: 1.6; }
+  #victory-btn {
+    background: #ffd700; color: #000; border: none; padding: 14px 36px;
+    border-radius: 14px; font-size: 1rem; font-weight: 700;
+    cursor: pointer; font-family: inherit; transition: transform 0.15s;
+  }
+  #victory-btn:hover { transform: scale(1.04); }
+
+  #instructions {
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+    z-index: 10; color: rgba(255,255,255,0.45); font-size: 0.8rem;
+    text-align: center; pointer-events: none;
+    transition: opacity 2s;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <div id="hud-left">
+    <div class="hud-item hud-stars" id="hud-fragments">✦ 0 / 40</div>
+    <div class="hud-item" id="hud-planets">🪐 0 / 8</div>
+  </div>
+  <div id="hud-right">
+    <div class="hud-item" id="hud-combo"></div>
+  </div>
+</div>
+
+<div id="quiz-overlay">
+  <div id="quiz-panel">
+    <div id="quiz-category"></div>
+    <div id="quiz-planet"></div>
+    <div id="quiz-question"></div>
+    <div id="quiz-answers"></div>
+    <div id="quiz-feedback"></div>
+  </div>
+</div>
+
+<div id="victory-overlay">
+  <div id="victory-title">🌌 Stardrive Complete!</div>
+  <div id="victory-sub">You've unlocked the secrets of the cosmos. All 40 star fragments collected — the universe is yours to explore.</div>
+  <button id="victory-btn" onclick="location.reload()">Play Again</button>
+</div>
+
+<div id="instructions">WASD or Arrow Keys to fly • Fly near a glowing planet to land</div>
+
+<script>
+(function(){
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// --- RESIZE ---
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// --- STATE ---
+const keys = {};
+let ship = { x: 0, y: 0, vx: 0, vy: 0, angle: 0, radius: 14, speed: 0 };
+let cam = { x: 0, y: 0 };
+let stars = [];
+let particles = [];
+let collectedFragments = 0;       // total star fragments (5 per planet)
+let completedPlanets = new Set();
+let nearPlanet = null;
+let quizActive = false;
+let victory = false;
+
+// --- PLANETS (8) ---
+const planets = [
+  { name: 'Mercury', x: -400, y: -240, radius: 24, color: '#b0b0b0', glow: '#ffffff',
+    category: 'Quick Math', icon: '🔢',
+    questions: [
+      { q: 'What is 12 × 8?', a: ['88', '96', '104', '84'], correct: 1 },
+      { q: 'If x + 7 = 15, what is x?', a: ['6', '7', '8', '9'], correct: 2 },
+      { q: 'What is 25% of 200?', a: ['25', '40', '50', '75'], correct: 2 },
+      { q: 'What is the square root of 144?', a: ['10', '11', '12', '14'], correct: 2 },
+      { q: 'How many degrees in a triangle?', a: ['90°', '180°', '270°', '360°'], correct: 1 },
+    ]
+  },
+  { name: 'Venus', x: -240, y: 300, radius: 26, color: '#e8c56d', glow: '#ffd700',
+    category: 'Art & Music', icon: '🎨',
+    questions: [
+      { q: 'Who painted the Mona Lisa?', a: ['Michelangelo', 'Leonardo da Vinci', 'Raphael', 'Donatello'], correct: 1 },
+      { q: 'How many notes are in a standard musical octave?', a: ['6', '7', '8', '12'], correct: 2 },
+      { q: 'Which color is NOT a primary color of light?', a: ['Red', 'Green', 'Blue', 'Yellow'], correct: 3 },
+      { q: 'What instrument has 88 keys?', a: ['Guitar', 'Violin', 'Piano', 'Flute'], correct: 2 },
+      { q: 'Vincent van Gogh painted "Starry Night" in which year?', a: ['1885', '1889', '1895', '1879'], correct: 1 },
+    ]
+  },
+  { name: 'Earth', x: 400, y: -60, radius: 28, color: '#4da6ff', glow: '#88ccff',
+    category: 'Geography', icon: '🌍',
+    questions: [
+      { q: 'What is the largest continent by area?', a: ['Africa', 'North America', 'Asia', 'Europe'], correct: 2 },
+      { q: 'Which country has the most people?', a: ['India', 'USA', 'China', 'Indonesia'], correct: 0 },
+      { q: 'What is the capital of Australia?', a: ['Sydney', 'Melbourne', 'Canberra', 'Brisbane'], correct: 2 },
+      { q: 'Which ocean is the deepest?', a: ['Atlantic', 'Indian', 'Arctic', 'Pacific'], correct: 3 },
+      { q: 'Mount Everest is in which mountain range?', a: ['Andes', 'Alps', 'Himalayas', 'Rockies'], correct: 2 },
+    ]
+  },
+  { name: 'Mars', x: -500, y: -380, radius: 22, color: '#d45d3e', glow: '#ff6b4a',
+    category: 'Science', icon: '🔬',
+    questions: [
+      { q: 'What gas do plants absorb from the atmosphere?', a: ['Oxygen', 'Nitrogen', 'Carbon dioxide', 'Helium'], correct: 2 },
+      { q: 'What is the chemical symbol for water?', a: ['HO', 'H₂O', 'H₂O₂', 'OH'], correct: 1 },
+      { q: 'How many bones are in the adult human body?', a: ['186', '196', '206', '216'], correct: 2 },
+      { q: 'What planet is known as the Red Planet?', a: ['Venus', 'Jupiter', 'Mars', 'Saturn'], correct: 2 },
+      { q: 'What force keeps us on the ground?', a: ['Magnetism', 'Friction', 'Gravity', 'Inertia'], correct: 2 },
+    ]
+  },
+  { name: 'Jupiter', x: 680, y: 300, radius: 38, color: '#d4a574', glow: '#ffcc88',
+    category: 'History', icon: '📜',
+    questions: [
+      { q: 'In which year did World War II end?', a: ['1943', '1944', '1945', '1946'], correct: 2 },
+      { q: 'Who was the first person to walk on the Moon?', a: ['Buzz Aldrin', 'Yuri Gagarin', 'Neil Armstrong', 'John Glenn'], correct: 2 },
+      { q: 'The ancient Egyptians built what structures?', a: ['Colosseum', 'Pyramids', 'Stonehenge', 'Parthenon'], correct: 1 },
+      { q: 'Which empire was ruled by Genghis Khan?', a: ['Roman', 'Ottoman', 'Mongol', 'Persian'], correct: 2 },
+      { q: 'The Renaissance began in which country?', a: ['France', 'England', 'Italy', 'Spain'], correct: 2 },
+    ]
+  },
+  { name: 'Saturn', x: -660, y: 120, radius: 32, color: '#e8d5a3', glow: '#ffeebb',
+    category: 'Logic Puzzles', icon: '🧩',
+    questions: [
+      { q: 'If all A are B, and all B are C, then:', a: ['All C are A', 'All A are C', 'No A are C', 'Some A are not C'], correct: 1 },
+      { q: 'Which number comes next: 2, 4, 8, 16, ?', a: ['24', '28', '32', '30'], correct: 2 },
+      { q: 'A bat and ball cost $1.10. The bat costs $1 more than the ball. How much is the ball?', a: ['$0.10', '$0.05', '$0.15', '$0.01'], correct: 1 },
+      { q: 'If you rearrange the letters "CIFAIPC" you get the name of a:', a: ['Country', 'Ocean', 'City', 'Planet'], correct: 1 },
+      { q: 'How many squares are on a chessboard?', a: ['32', '48', '64', '100'], correct: 2 },
+    ]
+  },
+  { name: 'Uranus', x: 200, y: -400, radius: 25, color: '#7ec8e3', glow: '#aaddff',
+    category: 'Language & Words', icon: '📖',
+    questions: [
+      { q: 'What is the most spoken language in the world by native speakers?', a: ['English', 'Spanish', 'Mandarin Chinese', 'Hindi'], correct: 2 },
+      { q: 'Which word means "a fear of long words"?', a: ['Arachnophobia', 'Hippopotomonstrosesquippedaliophobia', 'Claustrophobia', 'Acrophobia'], correct: 1 },
+      { q: 'What is a synonym for "happy"?', a: ['Morose', 'Joyful', 'Somber', 'Dreary'], correct: 1 },
+      { q: 'Which language uses the Cyrillic alphabet?', a: ['Greek', 'Arabic', 'Russian', 'Hebrew'], correct: 2 },
+      { q: '"Bonjour" is hello in which language?', a: ['Spanish', 'Italian', 'German', 'French'], correct: 3 },
+    ]
+  },
+  { name: 'Neptune', x: 720, y: -280, radius: 24, color: '#4d7cff', glow: '#7799ff',
+    category: 'Nature & Biology', icon: '🌿',
+    questions: [
+      { q: 'What is the largest animal on Earth?', a: ['Elephant', 'Blue whale', 'Giraffe', 'Colossal squid'], correct: 1 },
+      { q: 'How many hearts does an octopus have?', a: ['1', '2', '3', '4'], correct: 2 },
+      { q: 'What process do plants use to make food?', a: ['Respiration', 'Photosynthesis', 'Digestion', 'Fermentation'], correct: 1 },
+      { q: 'Which bird can fly backwards?', a: ['Eagle', 'Penguin', 'Hummingbird', 'Owl'], correct: 2 },
+      { q: 'What is the fastest land animal?', a: ['Lion', 'Cheetah', 'Gazelle', 'Horse'], correct: 1 },
+    ]
+  },
+];
+
+// --- STARFIELD ---
+function initStars() {
+  stars = [];
+  for (let i = 0; i < 400; i++) {
+    stars.push({
+      x: (Math.random() - 0.5) * canvas.width * 3,
+      y: (Math.random() - 0.5) * canvas.height * 3,
+      size: Math.random() * 1.8 + 0.3,
+      twinkle: Math.random() * Math.PI * 2,
+      twinkleSpeed: Math.random() * 0.03 + 0.005,
+      brightness: Math.random() * 0.5 + 0.5,
+    });
+  }
+}
+initStars();
+
+function spawnParticles(x, y, color, count) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Math.random() * 3 + 1;
+    particles.push({
+      x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+      life: 1, decay: Math.random() * 0.02 + 0.01,
+      size: Math.random() * 3 + 1, color,
+    });
+  }
+}
+
+// --- INPUT ---
+window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
+window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+// --- QUIZ ---
+let currentPlanet = null;
+let currentQIndex = 0;
+let currentScore = 0;
+let comboCount = 0;
+
+function openQuiz(planet) {
+  if (completedPlanets.has(planet.name)) return;
+  quizActive = true;
+  currentPlanet = planet;
+  currentQIndex = 0;
+  currentScore = 0;
+  document.getElementById('quiz-overlay').classList.add('active');
+  document.getElementById('quiz-category').textContent = planet.category + ' ' + planet.icon;
+  document.getElementById('quiz-planet').textContent = '🪐 ' + planet.name;
+  renderQuestion();
+}
+
+function closeQuiz() {
+  quizActive = false;
+  document.getElementById('quiz-overlay').classList.remove('active');
+  document.getElementById('quiz-feedback').textContent = '';
+  if (currentScore >= 5) {
+    completedPlanets.add(currentPlanet.name);
+    collectedFragments += currentScore;
+    spawnParticles(currentPlanet.x, currentPlanet.y, currentPlanet.glow, 40);
+    if (completedPlanets.size === 8) {
+      victory = true;
+      document.getElementById('victory-overlay').classList.add('active');
+    }
+  }
+  nearPlanet = null;
+  currentPlanet = null;
+  updateHUD();
+}
+
+function renderQuestion() {
+  const q = currentPlanet.questions[currentQIndex];
+  document.getElementById('quiz-question').textContent = `Q${currentQIndex + 1}: ${q.q}`;
+  document.getElementById('quiz-feedback').textContent = '';
+  const answersDiv = document.getElementById('quiz-answers');
+  answersDiv.innerHTML = '';
+  q.a.forEach((ans, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'quiz-btn';
+    btn.textContent = ans;
+    btn.addEventListener('click', () => answerQuestion(i, btn));
+    answersDiv.appendChild(btn);
+  });
+}
+
+function answerQuestion(idx, btn) {
+  const q = currentPlanet.questions[currentQIndex];
+  const correct = idx === q.correct;
+  const buttons = document.querySelectorAll('.quiz-btn');
+  buttons.forEach(b => b.disabled = true);
+
+  if (correct) {
+    btn.classList.add('correct');
+    comboCount++;
+    currentScore++;
+    document.getElementById('quiz-feedback').style.color = '#4ade80';
+    document.getElementById('quiz-feedback').textContent =
+      '✅ Correct! ' + (comboCount >= 3 ? '🔥 Combo x' + comboCount + '!' : '');
+  } else {
+    btn.classList.add('wrong');
+    buttons[q.correct].classList.add('correct');
+    comboCount = 0;
+    document.getElementById('quiz-feedback').style.color = '#f87171';
+    document.getElementById('quiz-feedback').textContent = '❌ Not quite. The correct answer is highlighted.';
+    // Still award a fragment for trying — education over punishment
+    if (currentQIndex === 4 && currentScore < 1) currentScore = 1;
+  }
+
+  currentQIndex++;
+  if (currentQIndex >= 5) {
+    setTimeout(closeQuiz, 1400);
+  } else {
+    setTimeout(renderQuestion, 1400);
+  }
+}
+
+// --- HUD ---
+function updateHUD() {
+  document.getElementById('hud-fragments').textContent = `✦ ${collectedFragments} / 40`;
+  document.getElementById('hud-planets').textContent = `🪐 ${completedPlanets.size} / 8`;
+  document.getElementById('hud-combo').textContent = comboCount >= 3 ? `🔥 ${comboCount}x Combo` : '';
+}
+
+// --- DRAW ---
+function drawStarfield() {
+  for (const s of stars) {
+    s.twinkle += s.twinkleSpeed;
+    const sx = (s.x - cam.x * 0.15) % canvas.width;
+    const sy = (s.y - cam.y * 0.15) % canvas.height;
+    const drawX = ((sx % canvas.width) + canvas.width) % canvas.width;
+    const drawY = ((sy % canvas.height) + canvas.height) % canvas.height;
+    const alpha = (Math.sin(s.twinkle) * 0.3 + 0.7) * s.brightness;
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(drawX, drawY, s.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawPlanet(p) {
+  const sx = p.x - cam.x;
+  const sy = p.y - cam.y;
+  if (sx < -200 || sx > canvas.width + 200 || sy < -200 || sy > canvas.height + 200) return;
+
+  // Glow
+  const glow = ctx.createRadialGradient(sx, sy, p.radius * 0.6, sx, sy, p.radius * 2.2);
+  glow.addColorStop(0, p.glow + '40');
+  glow.addColorStop(0.5, p.glow + '10');
+  glow.addColorStop(1, 'transparent');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(sx, sy, p.radius * 2.2, 0, Math.PI * 2); ctx.fill();
+
+  // Body
+  const body = ctx.createRadialGradient(sx - p.radius*0.25, sy - p.radius*0.3, p.radius*0.1, sx, sy, p.radius);
+  body.addColorStop(0, '#ffffff'); body.addColorStop(0.15, p.color); body.addColorStop(1, '#000000');
+  ctx.fillStyle = body;
+  ctx.beginPath(); ctx.arc(sx, sy, p.radius, 0, Math.PI * 2); ctx.fill();
+
+  // Atmosphere ring
+  ctx.strokeStyle = p.glow + '30';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(sx, sy, p.radius + 3, 0, Math.PI * 2); ctx.stroke();
+
+  // Saturn ring
+  if (p.name === 'Saturn') {
+    ctx.strokeStyle = '#e8d5a388';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, p.radius + 12, p.radius * 0.25, -0.4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = '#e8d5a344';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, p.radius + 20, p.radius * 0.2, -0.4, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Name label
+  const completed = completedPlanets.has(p.name);
+  ctx.fillStyle = completed ? '#ffd700' : '#ffffffcc';
+  ctx.font = `${completed ? 'bold ' : ''}${p.radius < 26 ? 11 : 12}px 'Segoe UI', system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText(p.name, sx, sy + p.radius + 18);
+
+  // Checkmark for completed
+  if (completed) {
+    ctx.fillStyle = '#ffd700';
+    ctx.font = '16px sans-serif';
+    ctx.fillText('✓', sx, sy + p.radius + 34);
+  }
+
+  // Distance indicator
+  return { sx, sy, radius: p.radius };
+}
+
+function drawShip() {
+  const sx = canvas.width / 2;
+  const sy = canvas.height / 2;
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.rotate(ship.angle);
+
+  // Engine glow
+  const eg = ctx.createRadialGradient(-18, 0, 2, -10, 0, 16);
+  eg.addColorStop(0, '#ff9944'); eg.addColorStop(0.5, '#ff660044'); eg.addColorStop(1, 'transparent');
+  ctx.fillStyle = eg;
+  ctx.beginPath(); ctx.arc(-12, 0, 16, 0, Math.PI * 2); ctx.fill();
+
+  // Ship body
+  ctx.fillStyle = '#e8e8e8';
+  ctx.beginPath();
+  ctx.moveTo(16, 0);
+  ctx.lineTo(-8, -9);
+  ctx.lineTo(-6, 0);
+  ctx.lineTo(-8, 9);
+  ctx.closePath();
+  ctx.fill();
+
+  // Cockpit
+  const cockpit = ctx.createRadialGradient(6, 0, 1, 6, 0, 5);
+  cockpit.addColorStop(0, '#88ccff'); cockpit.addColorStop(1, '#2277cc');
+  ctx.fillStyle = cockpit;
+  ctx.beginPath(); ctx.arc(8, 0, 5, 0, Math.PI * 2); ctx.fill();
+
+  // Wings
+  ctx.fillStyle = '#cccccc';
+  ctx.beginPath();
+  ctx.moveTo(-2, -9); ctx.lineTo(2, -17); ctx.lineTo(8, -9); ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-2, 9); ctx.lineTo(2, 17); ctx.lineTo(8, 9); ctx.closePath(); ctx.fill();
+
+  ctx.restore();
+}
+
+function drawParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy; p.life -= p.decay;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    const sx = p.x - cam.x;
+    const sy = p.y - cam.y;
+    ctx.fillStyle = p.color + Math.floor(p.life * 255).toString(16).padStart(2, '0');
+    ctx.beginPath(); ctx.arc(sx, sy, p.size * p.life, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+// --- UPDATE ---
+function update() {
+  if (quizActive || victory) return;
+
+  // Ship movement
+  const accel = 0.18;
+  const friction = 0.96;
+  const maxSpeed = 5;
+
+  if (keys['w'] || keys['arrowup'])    { ship.vx += Math.cos(ship.angle) * accel; ship.vy += Math.sin(ship.angle) * accel; }
+  if (keys['s'] || keys['arrowdown'])  { ship.vx -= Math.cos(ship.angle) * accel * 0.5; ship.vy -= Math.sin(ship.angle) * accel * 0.5; }
+  if (keys['a'] || keys['arrowleft'])  ship.angle -= 0.045;
+  if (keys['d'] || keys['arrowright']) ship.angle += 0.045;
+
+  ship.vx *= friction; ship.vy *= friction;
+  const spd = Math.sqrt(ship.vx**2 + ship.vy**2);
+  if (spd > maxSpeed) { ship.vx = (ship.vx/spd) * maxSpeed; ship.vy = (ship.vy/spd) * maxSpeed; }
+  ship.speed = spd;
+  ship.x += ship.vx; ship.y += ship.vy;
+
+  // Camera follows ship
+  cam.x += ((ship.x - canvas.width/2) - cam.x) * 0.08;
+  cam.y += ((ship.y - canvas.height/2) - cam.y) * 0.08;
+
+  // Engine particles
+  if (spd > 0.3) {
+    const ex = ship.x - Math.cos(ship.angle) * 18;
+    const ey = ship.y - Math.sin(ship.angle) * 18;
+    if (Math.random() < spd * 0.15) {
+      particles.push({
+        x: ex + (Math.random()-0.5)*4, y: ey + (Math.random()-0.5)*4,
+        vx: -Math.cos(ship.angle) * 1.2 + (Math.random()-0.5),
+        vy: -Math.sin(ship.angle) * 1.2 + (Math.random()-0.5),
+        life: 1, decay: 0.03 + Math.random()*0.04, size: Math.random()*2 + 1,
+        color: spd > 2 ? '#ff9944' : '#ffcc88',
+      });
+    }
+  }
+
+  // Check proximity to planets
+  nearPlanet = null;
+  for (const p of planets) {
+    const dx = ship.x - p.x;
+    const dy = ship.y - p.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < p.radius + ship.radius + 40) {
+      nearPlanet = p;
+      break;
+    }
+  }
+}
+
+// --- LAND ---
+window.addEventListener('keydown', e => {
+  if (e.key.toLowerCase() === 'e' && nearPlanet && !quizActive && !victory) {
+    if (!completedPlanets.has(nearPlanet.name)) {
+      openQuiz(nearPlanet);
+    }
+  }
+});
+
+// --- LOOP ---
+function loop() {
+  update();
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawStarfield();
+  for (const p of planets) drawPlanet(p);
+  drawParticles();
+  drawShip();
+  updateHUD();
+
+  // Prompt text
+  if (nearPlanet && !quizActive && !victory) {
+    const sx = nearPlanet.x - cam.x;
+    const sy = nearPlanet.y - cam.y;
+    ctx.fillStyle = '#ffffffcc';
+    ctx.font = '13px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Press E to land', sx, sy - nearPlanet.radius - 16);
+  }
+
+  // Fade instructions
+  if (collectedFragments > 0 || completedPlanets.size > 0) {
+    document.getElementById('instructions').style.opacity = '0';
+  }
+
+  requestAnimationFrame(loop);
+}
+
+// --- INIT ---
+ship.x = 0; ship.y = 0;
+cam.x = ship.x - canvas.width/2;
+cam.y = ship.y - canvas.height/2;
+updateHUD();
+loop();
+})();
+</script>
+</body>
+</html>

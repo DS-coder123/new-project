@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vita Discovery Lab — Learn the Science of Dairy</title>
+<style>
+  :root {
+    --gold: #F2C200;
+    --navy: #134B8D;
+    --dark-navy: #0D2E66;
+    --bg: #000;
+    --surface: #0a0a0f;
+    --card: #111118;
+    --text: #e8e8ec;
+    --muted: #8888a0;
+    --border: rgba(255,255,255,0.08);
+    --success: #22c55e;
+    --error: #ef4444;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; overflow-x: hidden;
+    line-height: 1.6;
+  }
+
+  /* --- HEADER --- */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+    background: rgba(0,0,0,0.85); backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 28px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .header-logo {
+    font-weight: 800; font-size: 1.25rem; letter-spacing: -0.01em;
+    color: #fff; text-decoration: none;
+  }
+  .header-logo span { color: var(--gold); }
+  .header-progress {
+    display: flex; gap: 6px; align-items: center;
+  }
+  .star-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #333; transition: all 0.4s;
+  }
+  .star-dot.earned { background: var(--gold); box-shadow: 0 0 8px var(--gold); }
+  .header-score {
+    margin-left: 12px; color: var(--gold); font-weight: 700; font-size: 0.9rem;
+  }
+
+  /* --- MAIN --- */
+  .container {
+    max-width: 780px; margin: 0 auto; padding: 100px 24px 60px;
+  }
+
+  /* --- STATION CARD --- */
+  .station {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 20px; padding: 40px 36px; margin-bottom: 28px;
+    display: none; animation: fadeSlideIn 0.45s ease;
+  }
+  .station.active { display: block; }
+  @keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(18px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .station-icon { font-size: 2.6rem; margin-bottom: 10px; }
+  .station-title {
+    font-size: 1.65rem; font-weight: 800; color: #fff; margin-bottom: 4px;
+  }
+  .station-subtitle {
+    font-size: 0.88rem; color: var(--muted); margin-bottom: 24px;
+  }
+
+  /* --- INFO PANELS --- */
+  .info-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;
+  }
+  .info-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 20px; transition: border-color 0.2s;
+  }
+  .info-card:hover { border-color: rgba(242,194,0,0.25); }
+  .info-card h3 {
+    font-size: 0.95rem; font-weight: 700; color: var(--gold); margin-bottom: 6px;
+  }
+  .info-card p { font-size: 0.85rem; color: #bbb; line-height: 1.55; }
+
+  /* --- QUIZ --- */
+  .quiz-q {
+    font-size: 1.08rem; font-weight: 600; margin-bottom: 16px; color: #ddd;
+  }
+  .quiz-options { display: flex; flex-direction: column; gap: 10px; }
+  .quiz-opt {
+    background: var(--surface); border: 1px solid var(--border);
+    color: #ccc; padding: 14px 18px; border-radius: 12px;
+    font-size: 0.92rem; cursor: pointer; text-align: left;
+    transition: all 0.2s; font-family: inherit;
+  }
+  .quiz-opt:hover:not(:disabled) {
+    background: rgba(242,194,0,0.06); border-color: rgba(242,194,0,0.3); color: #fff;
+  }
+  .quiz-opt.correct { background: rgba(34,197,94,0.12); border-color: #22c55e; color: #4ade80; }
+  .quiz-opt.wrong { background: rgba(239,68,68,0.12); border-color: #ef4444; color: #f87171; }
+  .quiz-opt:disabled { pointer-events: none; opacity: 0.65; }
+  .quiz-opt:disabled.correct { opacity: 1; }
+  .quiz-fb { margin-top: 14px; font-weight: 600; font-size: 0.9rem; min-height: 22px; }
+
+  /* --- DRAG & DROP --- */
+  .dd-area {
+    display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 20px;
+  }
+  .dd-step {
+    background: var(--surface); border: 1px dashed var(--border);
+    border-radius: 14px; padding: 16px 20px; min-width: 130px; text-align: center;
+    cursor: grab; user-select: none; transition: all 0.2s;
+    font-size: 0.88rem; color: #ccc;
+  }
+  .dd-step:hover { border-color: var(--gold); color: #fff; }
+  .dd-step.dragging { opacity: 0.4; }
+  .dd-slot {
+    background: var(--surface); border: 2px dashed rgba(255,255,255,0.12);
+    border-radius: 14px; padding: 16px 20px; min-height: 52px;
+    display: flex; align-items: center; justify-content: center;
+    text-align: center; font-size: 0.85rem; color: var(--muted);
+    transition: all 0.2s;
+  }
+  .dd-slot.over { border-color: var(--gold); background: rgba(242,194,0,0.06); }
+  .dd-slot.filled { border-style: solid; border-color: var(--gold); color: #fff; background: rgba(242,194,0,0.08); }
+  .dd-slot.correct-slot { border-color: #22c55e; background: rgba(34,197,94,0.08); color: #4ade80; }
+  .dd-slot.wrong-slot { border-color: #ef4444; background: rgba(239,68,68,0.06); color: #f87171; }
+  .dd-slots { display: flex; flex-direction: column; gap: 10px; max-width: 500px; }
+
+  /* --- BUTTONS --- */
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 13px 28px; border-radius: 12px; font-weight: 700;
+    font-size: 0.92rem; cursor: pointer; border: none; font-family: inherit;
+    transition: all 0.2s; text-decoration: none;
+  }
+  .btn-gold { background: var(--gold); color: #000; }
+  .btn-gold:hover { background: #ffd633; transform: translateY(-1px); box-shadow: 0 4px 20px rgba(242,194,0,0.25); }
+  .btn-outline {
+    background: transparent; border: 1px solid var(--border); color: #ccc;
+  }
+  .btn-outline:hover { border-color: #fff; color: #fff; }
+  .btn:disabled { opacity: 0.4; pointer-events: none; }
+
+  /* --- VICTORY --- */
+  .victory {
+    display: none; text-align: center; padding: 48px 24px;
+    animation: fadeSlideIn 0.6s ease;
+  }
+  .victory.active { display: block; }
+  .victory h2 { font-size: 2rem; font-weight: 800; color: var(--gold); margin-bottom: 8px; }
+  .victory p { color: #aaa; margin-bottom: 24px; max-width: 460px; margin-left: auto; margin-right: auto; }
+  .victory-stars { font-size: 1.3rem; color: var(--gold); margin-bottom: 16px; }
+
+  /* --- RESPONSIVE --- */
+  @media (max-width: 600px) {
+    .container { padding: 88px 16px 40px; }
+    .station { padding: 28px 20px; }
+    .info-grid { grid-template-columns: 1fr; }
+    .header { padding: 12px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <a class="header-logo" href="#">Vita <span>Discovery Lab</span></a>
+  <div class="header-progress">
+    <span class="star-dot" id="dot1"></span>
+    <span class="star-dot" id="dot2"></span>
+    <span class="star-dot" id="dot3"></span>
+    <span class="star-dot" id="dot4"></span>
+    <span class="star-dot" id="dot5"></span>
+    <span class="header-score" id="total-score">0 / 5 ★</span>
+  </div>
+</div>
+
+<!-- CONTAINER -->
+<div class="container" id="container">
+
+  <!-- ==================== STATION 1: FARM ==================== -->
+  <div class="station active" id="station1">
+    <div class="station-icon">🐄</div>
+    <div class="station-title">Station 1 — The Farm</div>
+    <div class="station-subtitle">Where does Vita milk come from? Learn about dairy farming.</div>
+    <div class="info-grid">
+      <div class="info-card">
+        <h3>🥛 Milk Collection</h3>
+        <p>Vita sources fresh milk daily from local Kosovo farms. Cows are milked twice a day — each cow produces about 25 liters. The milk is cooled to 4°C within minutes to preserve freshness.</p>
+      </div>
+      <div class="info-card">
+        <h3>🐮 Cow Breeds</h3>
+        <p>Vita works with farms raising Holstein and Simmental cows — breeds known for high-quality milk rich in protein (3.2%) and butterfat, perfect for making cheese and yogurt.</p>
+      </div>
+      <div class="info-card">
+        <h3>🌿 Sustainable Farming</h3>
+        <p>Vita partner farms use sustainable practices: rotational grazing, natural feed, and animal welfare standards. Happy cows produce better milk!</p>
+      </div>
+      <div class="info-card">
+        <h3>🚛 Farm to Factory</h3>
+        <p>Refrigerated Vita trucks collect milk every morning. The journey from farm to the Vita dairy takes under 2 hours — ensuring peak freshness for every Vita product.</p>
+      </div>
+    </div>
+    <button class="btn btn-gold" onclick="completeStation(1)">Continue to Science →</button>
+  </div>
+
+  <!-- ==================== STATION 2: SCIENCE ==================== -->
+  <div class="station" id="station2">
+    <div class="station-icon">🔬</div>
+    <div class="station-title">Station 2 — Dairy Science</div>
+    <div class="station-subtitle">What happens to milk inside the Vita lab? Test your knowledge.</div>
+    <div class="info-grid">
+      <div class="info-card">
+        <h3>🌡️ Pasteurization</h3>
+        <p>Milk is heated to 72°C for 15 seconds, then rapidly cooled. This kills harmful bacteria while preserving taste and nutrients — a process discovered by Louis Pasteur in 1864.</p>
+      </div>
+      <div class="info-card">
+        <h3>🦠 Fermentation Magic</h3>
+        <p>Yogurt and kos are made by adding live bacterial cultures (Lactobacillus bulgaricus and Streptococcus thermophilus) to warm milk. They convert lactose into lactic acid — creating that tangy flavor!</p>
+      </div>
+    </div>
+    <div class="quiz-q">Quiz: What temperature is milk pasteurized at?</div>
+    <div class="quiz-options" id="s2-options"></div>
+    <div class="quiz-fb" id="s2-fb"></div>
+    <button class="btn btn-gold" id="s2-next" style="display:none; margin-top:16px;" onclick="completeStation(2)">Continue to Production →</button>
+  </div>
+
+  <!-- ==================== STATION 3: PRODUCTION ==================== -->
+  <div class="station" id="station3">
+    <div class="station-icon">🏭</div>
+    <div class="station-title">Station 3 — Production Line</div>
+    <div class="station-subtitle" id="s3-instructions">Drag the steps into the correct order to make <strong>Vita Jogurt</strong>!</div>
+    <div class="dd-area" id="s3-pool"></div>
+    <div class="dd-slots" id="s3-slots"></div>
+    <div class="quiz-fb" id="s3-fb" style="margin-top:16px;"></div>
+    <div style="margin-top:16px; display:flex; gap:10px;">
+      <button class="btn btn-outline" id="s3-reset" onclick="resetProduction()">↺ Reset</button>
+      <button class="btn btn-gold" id="s3-next" style="display:none;" onclick="completeStation(3)">Continue to Nutrition →</button>
+    </div>
+  </div>
+
+  <!-- ==================== STATION 4: NUTRITION ==================== -->
+  <div class="station" id="station4">
+    <div class="station-icon">🧪</div>
+    <div class="station-title">Station 4 — Nutrition Lab</div>
+    <div class="station-subtitle">How healthy is dairy? Answer 3 questions about nutrition.</div>
+    <div class="quiz-q" id="s4-q"></div>
+    <div class="quiz-options" id="s4-options"></div>
+    <div class="quiz-fb" id="s4-fb"></div>
+  </div>
+
+  <!-- ==================== STATION 5: VITA CHALLENGE ==================== -->
+  <div class="station" id="station5">
+    <div class="station-icon">🏆</div>
+    <div class="station-title">Station 5 — Vita Challenge</div>
+    <div class="station-subtitle">The final test! Match Vita facts to the right products.</div>
+    <div class="quiz-q" id="s5-q"></div>
+    <div class="quiz-options" id="s5-options"></div>
+    <div class="quiz-fb" id="s5-fb"></div>
+  </div>
+
+  <!-- ==================== VICTORY ==================== -->
+  <div class="victory" id="victory">
+    <div>🏆</div>
+    <h2>You're a Vita Expert!</h2>
+    <div class="victory-stars" id="victory-stars">★★★★★</div>
+    <p>You've mastered the journey of Vita dairy — from the farm, through science and production, to the nutritious products that reach your table. Fresh thinking, fresh dairy!</p>
+    <button class="btn btn-gold" onclick="location.reload()">Play Again</button>
+  </div>
+
+</div>
+
+<script>
+// === STATE ===
+let completed = new Set();
+let totalStars = 0;
+
+function updateHeader() {
+  for (let i = 1; i <= 5; i++) {
+    document.getElementById('dot' + i).classList.toggle('earned', completed.has(i));
+  }
+  document.getElementById('total-score').textContent = totalStars + ' / 5 ★';
+}
+
+function showStation(n) {
+  document.querySelectorAll('.station').forEach(s => s.classList.remove('active'));
+  const el = document.getElementById('station' + n);
+  if (el) el.classList.add('active');
+  document.getElementById('victory').classList.remove('active');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function completeStation(n) {
+  if (completed.has(n)) return;
+  completed.add(n);
+  totalStars++;
+  updateHeader();
+
+  if (completed.size >= 5) {
+    document.querySelectorAll('.station').forEach(s => s.classList.remove('active'));
+    document.getElementById('victory').classList.add('active');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } else {
+    showStation(n + 1);
+    if (n + 1 === 3) initProduction();
+    if (n + 1 === 4) initNutrition();
+    if (n + 1 === 5) initChallenge();
+  }
+}
+
+// === STATION 2: Science Quiz ===
+function initScience() {
+  const opts = document.getElementById('s2-options');
+  const fb = document.getElementById('s2-fb');
+  const nextBtn = document.getElementById('s2-next');
+  const question = { q: 'What temperature is milk pasteurized at?', a: ['60°C for 30 min', '72°C for 15 sec', '100°C for 5 min', '45°C for 1 hour'], correct: 1 };
+
+  opts.innerHTML = '';
+  fb.textContent = '';
+  nextBtn.style.display = 'none';
+
+  question.a.forEach((ans, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'quiz-opt'; btn.textContent = ans;
+    btn.addEventListener('click', () => {
+      const all = opts.querySelectorAll('.quiz-opt');
+      all.forEach(b => b.disabled = true);
+      if (i === question.correct) {
+        btn.classList.add('correct');
+        fb.style.color = '#4ade80'; fb.textContent = '✅ Correct! 72°C for 15 seconds — HTST pasteurization.';
+        nextBtn.style.display = 'inline-flex';
+      } else {
+        btn.classList.add('wrong');
+        all[question.correct].classList.add('correct');
+        fb.style.color = '#f87171'; fb.textContent = '❌ Not quite. The correct answer is highlighted. You can still continue!';
+        nextBtn.style.display = 'inline-flex';
+      }
+    });
+    opts.appendChild(btn);
+  });
+}
+
+// === STATION 3: Production Drag & Drop ===
+const yogurtSteps = [
+  { id: 'heat', text: 'Heat milk to 85°C', order: 0, desc: 'Pasteurize & denature proteins' },
+  { id: 'cool', text: 'Cool to 43°C', order: 1, desc: 'Perfect temperature for cultures' },
+  { id: 'culture', text: 'Add bacterial cultures', order: 2, desc: 'L. bulgaricus + S. thermophilus' },
+  { id: 'incubate', text: 'Incubate 4-6 hours', order: 3, desc: 'Bacteria convert lactose → lactic acid' },
+  { id: 'chill', text: 'Chill & package', order: 4, desc: 'Cool to stop fermentation, then bottle' },
+];
+
+let productionState = [];
+let productionCorrect = 0;
+
+function initProduction() {
+  productionState = [];
+  productionCorrect = 0;
+  document.getElementById('s3-fb').textContent = '';
+  document.getElementById('s3-next').style.display = 'none';
+  document.getElementById('s3-instructions').innerHTML = 'Drag the steps into the correct order to make <strong>Vita Jogurt</strong>!';
+
+  // Shuffle steps
+  const shuffled = [...yogurtSteps].sort(() => Math.random() - 0.5);
+  const pool = document.getElementById('s3-pool');
+  pool.innerHTML = '';
+  shuffled.forEach((step, i) => {
+    const el = document.createElement('div');
+    el.className = 'dd-step'; el.textContent = step.text;
+    el.draggable = true; el.dataset.stepId = step.id; el.dataset.poolIdx = i;
+    el.addEventListener('dragstart', handleDragStart);
+    el.addEventListener('dragend', handleDragEnd);
+    pool.appendChild(el);
+  });
+
+  // Create drop slots
+  const slotsDiv = document.getElementById('s3-slots');
+  slotsDiv.innerHTML = '';
+  for (let i = 0; i < 5; i++) {
+    const slot = document.createElement('div');
+    slot.className = 'dd-slot'; slot.textContent = 'Drop step ' + (i + 1) + ' here';
+    slot.dataset.slotIdx = i;
+    slot.addEventListener('dragover', handleDragOver);
+    slot.addEventListener('dragleave', handleDragLeave);
+    slot.addEventListener('drop', handleDrop);
+    slotsDiv.appendChild(slot);
+  }
+
+  document.getElementById('s3-reset').style.display = 'inline-flex';
+}
+
+let draggedEl = null;
+
+function handleDragStart(e) {
+  draggedEl = this;
+  this.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function handleDragEnd(e) {
+  this.classList.remove('dragging');
+  draggedEl = null;
+  document.querySelectorAll('.dd-slot').forEach(s => s.classList.remove('over'));
+}
+
+function handleDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  this.classList.add('over');
+}
+
+function handleDragLeave(e) {
+  this.classList.remove('over');
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  this.classList.remove('over');
+  if (!draggedEl) return;
+  const slotIdx = parseInt(this.dataset.slotIdx);
+
+  // Remove from previous slot if any
+  const prevSlot = document.querySelector(`.dd-slot[data-filled="${draggedEl.dataset.stepId}"]`);
+  if (prevSlot) {
+    prevSlot.textContent = 'Drop step ' + (parseInt(prevSlot.dataset.slotIdx) + 1) + ' here';
+    prevSlot.classList.remove('filled', 'correct-slot', 'wrong-slot');
+    prevSlot.removeAttribute('data-filled');
+    productionState = productionState.filter(s => s.stepId !== draggedEl.dataset.stepId);
+  }
+
+  // Clear current slot if occupied
+  const existing = this.getAttribute('data-filled');
+  if (existing && existing !== draggedEl.dataset.stepId) {
+    const poolEl = document.querySelector(`.dd-step[data-step-id="${existing}"]`);
+    if (poolEl) poolEl.style.display = '';
+    productionState = productionState.filter(s => s.stepId !== existing);
+  }
+
+  // Place in slot
+  this.textContent = draggedEl.textContent;
+  this.classList.add('filled');
+  this.setAttribute('data-filled', draggedEl.dataset.stepId);
+  draggedEl.style.display = 'none';
+  productionState = productionState.filter(s => s.stepId !== draggedEl.dataset.stepId);
+  productionState.push({ stepId: draggedEl.dataset.stepId, slotIdx });
+
+  // Check if all slots filled
+  checkProduction();
+}
+
+function checkProduction() {
+  if (productionState.length < 5) return;
+  productionCorrect = 0;
+  const slots = document.querySelectorAll('.dd-slot');
+  productionState.forEach(ps => {
+    const step = yogurtSteps.find(s => s.id === ps.stepId);
+    const slot = slots[ps.slotIdx];
+    if (step && step.order === ps.slotIdx) {
+      slot.classList.add('correct-slot');
+      productionCorrect++;
+    } else {
+      slot.classList.add('wrong-slot');
+    }
+  });
+
+  const fb = document.getElementById('s3-fb');
+  if (productionCorrect === 5) {
+    fb.style.color = '#4ade80';
+    fb.textContent = '✅ Perfect! That\'s exactly how Vita Jogurt is made.';
+    document.getElementById('s3-next').style.display = 'inline-flex';
+    document.getElementById('s3-reset').style.display = 'none';
+  } else {
+    fb.style.color = '#f87171';
+    fb.textContent = `❌ ${productionCorrect}/5 correct. Check the order and try again.`;
+  }
+}
+
+function resetProduction() {
+  initProduction();
+}
+
+// === STATION 4: Nutrition Quiz ===
+const nutritionQuestions = [
+  { q: 'Which mineral is dairy most famous for?', a: ['Iron', 'Calcium', 'Potassium', 'Zinc'], correct: 1,
+    fb: 'Dairy is one of the best natural sources of calcium — essential for strong bones and teeth.' },
+  { q: 'What healthy bacteria are found in Vita Jogurt and Kos?', a: ['E. coli', 'Probiotics', 'Viruses', 'Yeast'], correct: 1,
+    fb: 'Probiotics (like Lactobacillus) support gut health and digestion. Vita jogurt and kos are packed with them!' },
+  { q: 'How much protein is in one glass (250ml) of Vita Qumësht 3.2%?', a: ['~3 grams', '~8 grams', '~15 grams', '~20 grams'], correct: 1,
+    fb: 'About 8 grams of high-quality protein — great for muscle repair and growth.' },
+];
+let s4Idx = 0;
+
+function initNutrition() {
+  s4Idx = 0;
+  showNutritionQuestion();
+}
+
+function showNutritionQuestion() {
+  if (s4Idx >= nutritionQuestions.length) {
+    completeStation(4);
+    return;
+  }
+  const q = nutritionQuestions[s4Idx];
+  document.getElementById('s4-q').textContent = `Q${s4Idx + 1}: ${q.q}`;
+  document.getElementById('s4-fb').textContent = '';
+  const opts = document.getElementById('s4-options');
+  opts.innerHTML = '';
+  q.a.forEach((ans, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'quiz-opt'; btn.textContent = ans;
+    btn.addEventListener('click', () => {
+      const all = opts.querySelectorAll('.quiz-opt');
+      all.forEach(b => b.disabled = true);
+      const fb = document.getElementById('s4-fb');
+      if (i === q.correct) {
+        btn.classList.add('correct');
+        fb.style.color = '#4ade80';
+        fb.textContent = '✅ ' + q.fb;
+      } else {
+        btn.classList.add('wrong');
+        all[q.correct].classList.add('correct');
+        fb.style.color = '#f87171';
+        fb.textContent = '❌ ' + q.fb;
+      }
+      s4Idx++;
+      setTimeout(showNutritionQuestion, 1800);
+    });
+    opts.appendChild(btn);
+  });
+}
+
+// === STATION 5: Vita Challenge ===
+const challengeQuestions = [
+  { q: 'Which Vita product is a salty yogurt drink, perfect for hot summer days?',
+    a: ['Vita Qumësht', 'Vita Jogurt', 'Ayran', 'Vita Whipping Cream'], correct: 2,
+    fb: 'Ayran! A traditional Balkan yogurt drink mixed with salt and water — refreshing and full of probiotics.' },
+  { q: 'Which Vita product is traditionally used in Albanian cuisine for making desserts and creamy sauces?',
+    a: ['Kos', 'Vita Cooking Cream', 'Ayran', 'Vita Qumësht 0.5%'], correct: 1,
+    fb: 'Vita Cooking Cream — perfect for creamy pasta, soups, and traditional Albanian desserts like trileçe.' },
+  { q: 'What makes Vita Kos (clabber) different from regular Vita Jogurt?',
+    a: ['It\'s sweeter', 'It\'s thicker and more sour', 'It\'s carbonated', 'It has less protein'], correct: 1,
+    fb: 'Vita Kos is thicker, tangier, and traditionally set in its own container — a beloved staple in Albanian households.' },
+  { q: 'What is the fat percentage of Vita Qumësht used for making Djath Vita (cheese)?',
+    a: ['0.5%', '1.5%', '3.2%', '10%'], correct: 2,
+    fb: '3.2% — the full-fat milk is essential for making rich, flavorful Djath Vita with the perfect texture.' },
+  { q: 'Vita Whipping Cream has what minimum fat content for perfect whipping?',
+    a: ['10%', '18%', '30%', '50%'], correct: 2,
+    fb: 'At least 30% milk fat — this high fat content allows the cream to trap air and form stiff peaks for desserts.' },
+];
+let s5Idx = 0;
+
+function initChallenge() {
+  s5Idx = 0;
+  showChallengeQuestion();
+}
+
+function showChallengeQuestion() {
+  if (s5Idx >= challengeQuestions.length) {
+    completeStation(5);
+    return;
+  }
+  const q = challengeQuestions[s5Idx];
+  document.getElementById('s5-q').textContent = `Q${s5Idx + 1}: ${q.q}`;
+  document.getElementById('s5-fb').textContent = '';
+  const opts = document.getElementById('s5-options');
+  opts.innerHTML = '';
+  q.a.forEach((ans, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'quiz-opt'; btn.textContent = ans;
+    btn.addEventListener('click', () => {
+      const all = opts.querySelectorAll('.quiz-opt');
+      all.forEach(b => b.disabled = true);
+      const fb = document.getElementById('s5-fb');
+      if (i === q.correct) {
+        btn.classList.add('correct');
+        fb.style.color = '#4ade80';
+        fb.textContent = '✅ ' + q.fb;
+      } else {
+        btn.classList.add('wrong');
+        all[q.correct].classList.add('correct');
+        fb.style.color = '#f87171';
+        fb.textContent = '❌ ' + q.fb;
+      }
+      s5Idx++;
+      setTimeout(showChallengeQuestion, 2000);
+    });
+    opts.appendChild(btn);
+  });
+}
+
+// === INIT ===
+updateHeader();
+initScience();
+</script>
+</body>
+</html>
