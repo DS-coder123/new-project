@@ -3,442 +3,1708 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vita — How Milk Is Made</title>
+<title>Vita: Farm to Fridge</title>
 <style>
   :root { --gold: #F2C200; --navy: #134B8D; }
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:#000; overflow:hidden; font-family:'Segoe UI',system-ui,sans-serif; width:100vw; height:100vh; }
+  body {
+    background:#000; overflow:hidden; font-family:'Segoe UI',system-ui,sans-serif;
+    width:100vw; height:100vh; user-select:none; -webkit-user-select:none;
+    touch-action:manipulation;
+  }
   canvas { display:block; position:fixed; top:0; left:0; width:100%; height:100%; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <script>
-(function(){
-var c=document.getElementById('c'), ctx=c.getContext('2d');
-var GOLD='#F2C200', NAVY='#134B8D';
-var W,H;
-function resize(){ W=window.innerWidth; H=window.innerHeight; c.width=W; c.height=H; c.style.width=W+'px'; c.style.height=H+'px'; }
-window.addEventListener('resize',resize); resize();
+(function() {
+  "use strict";
+  var c = document.getElementById('c');
+  var ctx = c.getContext('2d');
+  var G = '#F2C200';
+  var N = '#134B8D';
+  var W, H;
 
-// Farm background
-var farmBg=new Image(); farmBg.crossOrigin='anonymous';
-farmBg.src='https://th.bing.com/th/id/R.13820971a962ffbeb63a8fef36185b16?rik=NQSf0Tk1%2f7h9pg&pid=ImgRaw&r=0';
-
-// Cow image for stage 0 & 1
-var cowImg=new Image(); cowImg.crossOrigin='anonymous';
-cowImg.src='https://th.bing.com/th/id/R.4cc18d9e95b51c4233e2ebc4a95c1277?rik=0OIl%2bUlxQJVWHg&pid=ImgRaw&r=0';
-
-var stage=0, stageDone=[], totalStages=9;
-var transitionAlpha=0, transitionText='', stageTimer=0;
-var keys={};
-var mouse={x:0,y:0,down:false,clicked:false};
-var particles=[];
-
-// Stage-specific state
-var s1_fed=0, s1_target=5, s1_cows=[];
-var s2_milk=0, s2_target=8, s2_streaming=false;
-var s3_x=0, s3_obstacles=[], s3_score=0, s3_target=8;
-var s4_samples=[], s4_correct=0, s4_total=0, s4_target=8;
-var s5_temp=38, s5_zoneTime=0, s5_targetSec=8, s5_heat=false, s5_cool=false;
-var s6_globules=[], s6_popped=0, s6_target=12;
-var s7_bottles=[], s7_filled=0, s7_target=10;
-var s8_boxes=[], s8_bottles=[], s8_packed=0, s8_target=6, s8_drag=null;
-var s9_truckX=0, s9_houses=[], s9_delivered=0, s9_target=6;
-
-// Input
-c.addEventListener('mousemove',function(e){ var r=c.getBoundingClientRect(); mouse.x=e.clientX-r.left; mouse.y=e.clientY-r.top; });
-c.addEventListener('mousedown',function(e){ mouse.down=true; mouse.clicked=true; e.preventDefault(); });
-c.addEventListener('mouseup',function(){ mouse.down=false; s2_streaming=false; if(s8_drag){ var b=s8_drag; for(var i=0;i<s8_boxes.length;i++){ var bx=s8_boxes[i]; if(!bx.full&&Math.abs(b.x-bx.x)<50&&Math.abs(b.y-bx.y)<50&&Math.abs(b.x-bx.x)<60&&Math.abs(b.y-bx.y)<60){ bx.full=true; s8_packed++; particles.push({x:bx.x+30,y:bx.y+30,vx:0,vy:-3,life:1,decay:0.04,color:GOLD,size:5}); break; }} s8_drag=null; }});
-c.addEventListener('touchstart',function(e){ e.preventDefault(); var r=c.getBoundingClientRect(); mouse.x=e.touches[0].clientX-r.left; mouse.y=e.touches[0].clientY-r.top; mouse.down=true; mouse.clicked=true; });
-c.addEventListener('touchmove',function(e){ e.preventDefault(); var r=c.getBoundingClientRect(); mouse.x=e.touches[0].clientX-r.left; mouse.y=e.touches[0].clientY-r.top; });
-c.addEventListener('touchend',function(){ mouse.down=false; s2_streaming=false; s8_drag=null; });
-window.addEventListener('keydown',function(e){ keys[e.key.toLowerCase()]=true; if(e.key===' '||e.key==='Enter'){ e.preventDefault(); if(stage===1&&s1_fed<s1_target) s1_fed++; if(stage===4&&s4_samples.length>0) judgeSample(true); if(stage===7) fillBottle(); }});
-window.addEventListener('keyup',function(e){ keys[e.key.toLowerCase()]=false; });
-
-// Helpers
-function rrect(x,y,w,h,r){ ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath(); }
-function btn(x,y,w,h,txt,clr){
-  var h=mouse.x>x&&mouse.x<x+w&&mouse.y>y&&mouse.y<y+h;
-  rrect(x,y,w,h,14); ctx.fillStyle=h?'#ffd633':clr; ctx.fill();
-  ctx.fillStyle=clr===GOLD?'#000':'#fff'; ctx.font='bold 14px "Segoe UI",system-ui,sans-serif'; ctx.textAlign='center'; ctx.fillText(txt,x+w/2,y+h/2+5);
-  return h&&mouse.clicked;
-}
-function drawHUD(){
-  ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(0,0,W,42);
-  ctx.fillStyle='#fff';ctx.font='bold 14px "Segoe UI",system-ui,sans-serif';ctx.textAlign='left';ctx.fillText('VITA',14,29);
-  ctx.fillStyle=GOLD;ctx.font='bold 14px "Segoe UI",system-ui,sans-serif';ctx.fillText('STAGE '+stage+'/'+totalStages,54,29);
-}
-function startTransition(txt,nxt){
-  transitionAlpha=0; transitionText=txt;
-  setTimeout(function(){ transitionAlpha=1; },30);
-  setTimeout(function(){ stage=nxt; initStage(nxt); setTimeout(function(){ transitionAlpha=0; },200); },700);
-}
-function completeStage(n){
-  stageDone[n]=true; stageTimer=0;
-  var msgs=['Cow fed! → Milking','Milk collected! → Transport','Delivered! → Testing','Tests passed! → Pasteurization','Pasteurized! → Homogenization','Homogenized! → Bottling','Bottles filled! → Packing','Boxes packed! → Delivery','All delivered! '];
-  if(n>=totalStages-1) startTransition(msgs[n],totalStages);
-  else startTransition(msgs[n],n+1);
-}
-function initStage(n){
-  particles=[]; stageTimer=0;
-  if(n===0){
-    s1_fed=0; s1_cows=[]; for(var i=0;i<3;i++) s1_cows.push({x:W*0.15+i*W*0.28,y:H*0.45,w:W*0.22,h:H*0.25});
+  function resize() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    c.width = W;
+    c.height = H;
   }
-  if(n===1){ s2_milk=0; s2_streaming=false; }
-  if(n===2){ s3_x=W*0.15; s3_obstacles=[]; s3_score=0; for(var i=0;i<8;i++) s3_obstacles.push({x:W+i*W*0.2,y:H*0.6+Math.random()*60,r:12+Math.random()*10}); }
-  if(n===3){ s4_samples=[]; s4_correct=0; s4_total=0; genSample(); }
-  if(n===4){ s5_temp=38; s5_zoneTime=0; s5_heat=false; s5_cool=false; }
-  if(n===5){ s6_globules=[]; s6_popped=0; for(var i=0;i<s6_target;i++) s6_globules.push({x:W*0.1+Math.random()*W*0.6,y:H*0.3+Math.random()*H*0.35,r:15+Math.random()*12,vx:(Math.random()-0.5)*1.2,vy:(Math.random()-0.5)*0.8}); }
-  if(n===6){ s7_bottles=[]; s7_filled=0; }
-  if(n===7){ s8_boxes=[]; s8_bottles=[]; s8_packed=0; for(var i=0;i<3;i++){ s8_boxes.push({x:W*0.1+i*W*0.3,y:H*0.65,w:80,h:60,full:false}); } for(var i=0;i<s8_target;i++) s8_bottles.push({x:W*0.05+Math.random()*W*0.5,y:H*0.35+Math.random()*H*0.2,filled:true}); }
-  if(n===8){ s9_truckX=W*0.1; s9_houses=[]; s9_delivered=0; for(var i=0;i<s9_target;i++) s9_houses.push({x:W*0.2+(i+1)*W*0.12,y:H*0.4,r:22+Math.random()*8}); }
-}
-function genSample(){ s4_samples.push({good:Math.random()>0.35,alpha:0}); }
+  window.addEventListener('resize', resize);
+  resize();
 
-function fillBottle(){
-  for(var i=0;i<s7_bottles.length;i++){ var b=s7_bottles[i]; if(!b.filled&&b.x>0&&b.x<W){ var d=Math.abs(b.x-W/2); if(d<60){ b.filled=true; s7_filled++; particles.push({x:b.x,y:b.y,vx:(Math.random()-0.5)*4,vy:-4,life:1,decay:0.04,color:GOLD,size:4}); return; }}}
-}
-function judgeSample(good){ if(s4_samples.length>0){ var s=s4_samples.shift(); s4_total++; if(good===s.good) s4_correct++; genSample(); }}
+  // ─── Game State ───
+  var STATE = { MENU:0, INTRO:1, PLAYING:2, STAGE_CLEAR:3, FINAL:4 };
+  var gs = STATE.MENU;
+  var stage = 0;
+  var totalScore = 0;
+  var bestScore = 0;
+  try { bestScore = parseInt(localStorage.getItem('vita-farmtofridge-best') || '0'); } catch(e) {}
 
-// ============ DRAW STAGES ============
+  var stageScores = [0, 0, 0, 0, 0];
+  var introTimer = 0;
+  var clearTimer = 0;
+  var clickX = 0, clickY = 0;
+  var mouseDown = false;
+  var touchActive = false;
+  var keys = {};
 
-function drawStage0(){
-  // FEED THE COW
-  if(farmBg.complete&&farmBg.naturalWidth>0){
-    var iw3=farmBg.width, ih3=farmBg.height;
-    var s3=Math.max(W/iw3, H/ih3);
-    ctx.drawImage(farmBg, 0, 0, s3*iw3, s3*ih3);
-    ctx.fillStyle='rgba(0,0,0,0.35)';ctx.fillRect(0,0,W,H);
-  } else {
-    var grad=ctx.createLinearGradient(0,0,0,H);
-    grad.addColorStop(0,'#7eb8da');grad.addColorStop(0.55,'#a3cee8');grad.addColorStop(0.7,'#8bc34a');grad.addColorStop(1,'#558b2f');
-    ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
-  }
-  // Cows (real images)
-  for(var i=0;i<s1_cows.length;i++){
-    var co=s1_cows[i];
-    if(cowImg.complete&&cowImg.naturalWidth>0){
-      // Draw cow photo with rounded clip
-      ctx.save();
-      rrect(co.x,co.y,co.w,co.h,25);ctx.clip();
-      var iw=cowImg.width, ih=cowImg.height;
-      var scale=Math.max(co.w/iw, co.h/ih);
-      var sw=iw*scale, sh=ih*scale;
-      ctx.drawImage(cowImg, co.x-(sw-co.w)/2, co.y-(sh-co.h)*0.3, sw, sh);
-      ctx.restore();
-      rrect(co.x,co.y,co.w,co.h,25);ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=2;ctx.stroke();
-    } else {
-      // Fallback drawn cow
-      ctx.fillStyle='#f5f5dc';rrect(co.x,co.y,co.w,co.h,25);ctx.fill();
-      ctx.fillStyle='#333';rrect(co.x+co.w*0.1,co.y+co.h*0.15,co.w*0.25,co.h*0.55,12);ctx.fill();
-      ctx.fillStyle='#f5f5dc';ctx.beginPath();ctx.arc(co.x+co.w*0.85,co.y+co.h*0.3,co.h*0.35,0,Math.PI*2);ctx.fill();
+  // ─── Stage config ───
+  var STAGES = [
+    { name:'Feed the Cows', icon:'F', color:'#4ade80',
+      desc:'Cows graze on fresh Kosovo pastures. Feed each cow to prepare them for milking!',
+      fact:'A dairy cow eats about 25 kg of grass and hay every day to produce rich, nutritious milk.' },
+    { name:'Milking Time', icon:'M', color:'#60a5fa',
+      desc:'Click the cow\'s udder to milk her! Each click fills the bucket. Fill it to 100% to complete!',
+      fact:'Cows are milked 2-3 times daily. Modern machines gently extract milk in just 5-7 minutes per cow.' },
+    { name:'Cool the Milk', icon:'C', color:'#38bdf8',
+      desc:'Catch falling ice blocks with your bucket to cool the milk! Dodge the red heat blocks — they make it too warm!',
+      fact:'Milk leaves the cow at 37C and must be cooled to 4C within 2 hours to stay fresh and safe.' },
+    { name:'Pasteurization', icon:'P', color:'#f97316',
+      desc:'Click inside the milk tank to create heat bursts and zap bacteria! Keep the temperature at 72C for perfect pasteurization.',
+      fact:'Vita pasteurizes milk by heating it to 72C for 15 seconds, then rapidly cooling it. This kills harmful bacteria while preserving nutrients.' },
+    { name:'Bottle & Deliver', icon:'B', color:'#a78bfa',
+      desc:'Grab milk bottles from the counter and pack them into the Vita crate! Click a bottle then click the crate to drop it in.',
+      fact:'After pasteurization, milk is bottled, sealed, and delivered to stores within 24 hours - farm fresh to your table!' }
+  ];
+
+  // ─── Stage-Specific Data ───
+  var sd = {};
+
+  function resetStageData(n) {
+    sd = {};
+    sd.cows = [];
+    sd.wheats = []; sd.grabbedWheat = null; sd.wheatOffX = 0; sd.wheatOffY = 0;
+    sd.fedCount = 0; sd.cowTarget = 3;
+    sd.milkAmount = 0; sd.milkTarget = 100; sd.udderCX = 0; sd.udderCY = 0; sd.udderCooldown = 0;
+    sd.milkStreams = []; sd.bucketReady = false; sd.bucketDragX = 0; sd.bucketDragY = 0;
+    sd.facilityX = 0; sd.facilityY = 0; sd.bucketDragging = false; sd.allDone = false;
+    sd.temp = 4.0; sd.tempTime = 0; sd.tempTarget = 20;
+    sd.bucketX = 0; sd.iceBlocks = []; sd.iceParticles = []; sd.iceSpawnTimer = 0;
+    sd.playerX = 0; sd.playerY = 0; sd.playerVY = 0; sd.bacteria = [];
+    sd.heatRings = []; sd.bactSpawnTimer = 0; sd.pasteurTemp = 72; sd.pasteurTime = 0; sd.pasteurTarget = 18;
+    sd.packBottles = []; sd.packSpawnTimer = 0; sd.packedCount = 0; sd.packTarget = 12;
+    sd.grabbedIdx = -1; sd.counterX = 0; sd.counterY = 0; sd.crateCX = 0; sd.crateCY = 0;
+    sd.beltY = 0;
+    sd.stars = 0;
+
+    // Stage 1
+    if (n === 0) {
+      var cowW = Math.min(90, W * 0.095), cowH = Math.min(70, W * 0.075);
+      var groundY = H * 0.78;
+      // Spawn 5 random wheat pieces on the ground
+      for (var w = 0; w < 5; w++) {
+        sd.wheats.push({
+          x: W * 0.1 + Math.random() * W * 0.6,
+          y: groundY - 20 - Math.random() * 14,
+          active: true
+        });
+      }
+      var spacing = (W - 60) / sd.cowTarget;
+      for (var i = 0; i < sd.cowTarget; i++) {
+        sd.cows.push({
+          x: 30 + spacing * (i + 0.5) - cowW / 2,
+          y: groundY - cowH,
+          w: cowW, h: cowH,
+          feed: 0, need: 3, happy: 0, vx: 0, vy: 0,
+          dir: 1, bob: Math.random() * Math.PI * 2
+        });
+      }
     }
-    if(s1_fed>i){ ctx.fillStyle='rgba(76,175,80,0.3)';rrect(co.x,co.y,co.w,co.h,25);ctx.fill(); }
+    // Stage 2
+    if (n === 1) {
+      sd.facilityX = W * 0.85; sd.facilityY = H * 0.5;
+      sd.milkCows = [];
+      var groundY2 = H * 0.78;
+      var cowW2 = 120, cowH2 = 80;
+      var totalW = cowW2 * 3 + 40;
+      var startX = (W - totalW) / 2;
+      for (var ci = 0; ci < 3; ci++) {
+        var ccx = startX + ci * (cowW2 + 20);
+        sd.milkCows.push({
+          x: ccx, y: groundY2 - cowH2,
+          w: cowW2, h: cowH2,
+          udderCX: ccx + cowW2 * 0.48,
+          udderCY: groundY2 - cowH2 + cowH2 - 4 + 8,
+          milkAmount: 0, done: false,
+          bucketX: ccx + cowW2 * 0.48,
+          bucketY: groundY2 + 4,
+          bob: Math.random() * Math.PI * 2
+        });
+      }
+    }
+    // Stage 3
+    if (n === 2) {
+      sd.temp = 4.0; sd.bucketX = W/2; sd.iceBlocks = []; sd.iceParticles = []; sd.iceSpawnTimer = 0;
+    }
+    // Stage 4
+    if (n === 3) {
+      sd.tankCX = W * 0.5; sd.tankCY = H * 0.45; sd.tankR = Math.min(W, H) * 0.32;
+    }
+    // Stage 5
+    if (n === 4) {
+      sd.counterX = W * 0.18; sd.counterY = H * 0.45;
+      sd.crateCX = W * 0.72; sd.crateCY = H * 0.50;
+    }
   }
-  // Instruction
-  ctx.fillStyle='rgba(0,0,0,0.5)';rrect(W*0.25,H*0.05,W*0.5,40,10);ctx.fill();
-  ctx.fillStyle='#fff';ctx.font='bold 16px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-  ctx.fillText('Press SPACE or tap to feed the cows ('+s1_fed+'/'+s1_target+')',W/2,32);
-  if(s1_fed>=s1_target) completeStage(0);
-}
 
-function drawStage1(){
-  // MILK THE COW
-  if(farmBg.complete&&farmBg.naturalWidth>0){
-    var iw4=farmBg.width, ih4=farmBg.height;
-    var s4=Math.max(W/iw4, H/ih4);
-    ctx.drawImage(farmBg, 0, 0, s4*iw4, s4*ih4);
-    ctx.fillStyle='rgba(0,0,0,0.35)';ctx.fillRect(0,0,W,H);
-  } else {
-    var grad=ctx.createLinearGradient(0,0,0,H);
-    grad.addColorStop(0,'#7eb8da');grad.addColorStop(0.55,'#a3cee8');grad.addColorStop(0.7,'#8bc34a');grad.addColorStop(1,'#558b2f');
-    ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
-  }
-  // Cow (real image)
-  var cx=W*0.15,cy=H*0.3,cw=W*0.25,ch=H*0.3;
-  if(cowImg.complete&&cowImg.naturalWidth>0){
-    ctx.save(); rrect(cx,cy,cw,ch,30);ctx.clip();
-    var iw2=cowImg.width, ih2=cowImg.height;
-    var s2=Math.max(cw/iw2, ch/ih2);
-    ctx.drawImage(cowImg, cx-(s2*iw2-cw)/2, cy-(s2*ih2-ch)*0.3, s2*iw2, s2*ih2);
-    ctx.restore();
-    rrect(cx,cy,cw,ch,30);ctx.strokeStyle='rgba(255,255,255,0.2)';ctx.lineWidth=2;ctx.stroke();
-  } else {
-    ctx.fillStyle='#f5f5dc';rrect(cx,cy,cw,ch,30);ctx.fill();
-    ctx.fillStyle='#333';rrect(cx+cw*0.08,cy+ch*0.12,cw*0.22,ch*0.5,10);ctx.fill();
-    ctx.fillStyle='#f5f5dc';ctx.beginPath();ctx.arc(cx+cw*0.82,cy+ch*0.25,ch*0.3,0,Math.PI*2);ctx.fill();
-  }
-  // Udder
-  var ux=cx+cw*0.4,uy=cy+ch*0.75,uw=cw*0.25,uh=ch*0.25;
-  ctx.fillStyle='#e8b4b8';rrect(ux,uy,uw,uh,12);ctx.fill();
-  ctx.strokeStyle=s2_streaming?GOLD:'#c9959b';ctx.lineWidth=2;ctx.stroke();
-  // Teats
-  for(var t=0;t<4;t++){ ctx.fillStyle='#e8b4b8';ctx.beginPath();ctx.arc(ux+uw*0.15+t*uw*0.23,uy+uh+6,4,0,Math.PI*2);ctx.fill(); }
-  // Pail
-  var px=W*0.7,py=H*0.5;
-  ctx.fillStyle='#8B7355';ctx.beginPath();ctx.moveTo(px-40,py-30);ctx.lineTo(px-48,py+40);ctx.lineTo(px+48,py+40);ctx.lineTo(px+40,py-30);ctx.closePath();ctx.fill();
-  ctx.strokeStyle='#5a4530';ctx.lineWidth=2;ctx.stroke();
-  // Milk in pail
-  var fillH=s2_milk/s2_target*65;
-  ctx.fillStyle='rgba(255,255,255,0.8)';
-  ctx.beginPath();ctx.moveTo(px-36,py+36);ctx.lineTo(px-36-fillH*0.05,py+36-fillH);ctx.lineTo(px+36+fillH*0.05,py+36-fillH);ctx.lineTo(px+36,py+36);ctx.closePath();ctx.fill();
-  // Stream
-  s2_streaming=(mouse.down&&mouse.x>ux&&mouse.x<ux+uw&&mouse.y>uy&&mouse.y<uy+uh+20);
-  if(s2_streaming){ s2_milk+=0.05; if(s2_milk>=s2_target) s2_milk=s2_target; }
-  if(s2_streaming||s2_milk>0&&s2_milk<s2_target){
-    ctx.strokeStyle='rgba(255,255,255,0.75)';ctx.lineWidth=5;ctx.beginPath();
-    ctx.moveTo(ux+uw/2,uy+uh+10);ctx.quadraticCurveTo(ux+uw/2+30,py-10,px,py+36-fillH);ctx.stroke();
-  }
-  // Instruction
-  ctx.fillStyle='rgba(0,0,0,0.5)';rrect(W*0.2,H*0.05,W*0.6,40,10);ctx.fill();
-  ctx.fillStyle='#fff';ctx.font='bold 15px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-  ctx.fillText('Click & hold the udder to milk ('+Math.floor(s2_milk/s2_target*100)+'%)',W/2,32);
-  if(s2_milk>=s2_target) completeStage(1);
-}
-
-function drawStage2(){
-  // TRANSPORT — drive truck, collect milk icons, avoid potholes
-  var grad=ctx.createLinearGradient(0,0,0,H);
-  grad.addColorStop(0,'#7eb8da');grad.addColorStop(0.6,'#a3cee8');grad.addColorStop(0.7,'#666');grad.addColorStop(1,'#333');
-  ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
-  // Road
-  ctx.fillStyle='#444';ctx.fillRect(0,H*0.58,W,H*0.18);
-  ctx.fillStyle='#ff0';ctx.fillRect((s3_x*40)%W,H*0.66,25,3);
-  // Obstacles (potholes)
-  s3_obstacles.forEach(function(o){ o.x-=1.5; if(o.x<-30){o.x=W+30;o.y=H*0.58+Math.random()*H*0.16;} ctx.fillStyle='#222';ctx.beginPath();ctx.arc(o.x,o.y,o.r,0,Math.PI*2);ctx.fill(); });
-  // Collectibles
-  s3_obstacles.forEach(function(o,i){ if(i%2===0){ ctx.fillStyle='rgba(255,255,255,0.7)';ctx.fillRect(o.x+40,o.y-15,16,20);ctx.fillStyle=NAVY;ctx.font='bold 8px "Segoe UI"';ctx.fillText('V',o.x+48,o.y);} });
-  // Truck
-  var tx=s3_x,ty=H*0.55;
-  if(keys['arrowleft']||keys['a']){ s3_x-=3; if(s3_x<0) s3_x=0; }
-  if(keys['arrowright']||keys['d']){ s3_x+=3; if(s3_x>W*0.7) s3_x=W*0.7; }
-  ctx.fillStyle=NAVY;rrect(tx,ty,70,40,8);ctx.fill();
-  ctx.fillStyle='#0D2E66';rrect(tx-10,ty+28,90,20,6);ctx.fill();
-  ctx.fillStyle='#fff';ctx.fillRect(tx+50,ty-18,18,20);
-  ctx.fillStyle='#333';ctx.beginPath();ctx.arc(tx+10,ty+42,8,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(tx+60,ty+42,8,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle=GOLD;ctx.font='bold 10px "Segoe UI"';ctx.textAlign='center';ctx.fillText('VITA',tx+35,ty+22);
-  // Check collisions
-  s3_obstacles.forEach(function(o){
-    if(Math.abs(o.x-tx-35)<25&&Math.abs(o.y-ty-20)<25){
-      if(o.r>14){ s3_score=Math.max(0,s3_score-1); o.x=-100; } // pothole
-      else { s3_score++; o.x=-100; } // collectible
+  // ─── Input ───
+  c.addEventListener('mousedown', function(e) { e.preventDefault(); mouseDown = true;
+    var r = c.getBoundingClientRect();
+    clickX = e.clientX - r.left; clickY = e.clientY - r.top;
+    if (gs === STATE.MENU) handleMenuClick(clickX, clickY);
+    else if (gs === STATE.STAGE_CLEAR) handleClearClick();
+    else if (gs === STATE.FINAL) handleFinalClick(clickX, clickY);
+    else if (gs === STATE.PLAYING && stage === 0) handleStage0Down(clickX, clickY);
+  });
+  c.addEventListener('mouseup', function() { mouseDown = false; sd.grabbedWheat = null; });
+  c.addEventListener('mousemove', function(e) { 
+    var r = c.getBoundingClientRect();
+    clickX = e.clientX - r.left; clickY = e.clientY - r.top;
+    if (gs === STATE.PLAYING && stage === 0 && sd.grabbedWheat) { sd.grabbedWheat.x = clickX - sd.wheatOffX; sd.grabbedWheat.y = clickY - sd.wheatOffY; }
+  });
+  c.addEventListener('click', function(e) {
+    if (gs === STATE.PLAYING) {
+      var r = c.getBoundingClientRect();
+      var cx = e.clientX - r.left, cy = e.clientY - r.top;
+      if (stage === 1) tryMilk(cx, cy);
+      if (stage === 3) handlePasteurClick(cx, cy);
+      if (stage === 4) handlePackClick(cx, cy);
     }
   });
-  ctx.fillStyle='rgba(0,0,0,0.5)';rrect(W*0.25,H*0.05,W*0.5,30,8);ctx.fill();
-  ctx.fillStyle='#fff';ctx.font='bold 14px "Segoe UI"';ctx.textAlign='center';
-  ctx.fillText('Arrow keys to drive · Collect: '+s3_score+'/'+s3_target,W/2,26);
-  if(s3_score>=s3_target) completeStage(2);
-}
+  c.addEventListener('touchstart', function(e) { e.preventDefault(); touchActive = true;
+    var t = e.touches[0];
+    var r = c.getBoundingClientRect();
+    clickX = t.clientX - r.left; clickY = t.clientY - r.top;
+    if (gs === STATE.MENU) handleMenuClick(clickX, clickY);
+    else if (gs === STATE.STAGE_CLEAR) handleClearClick();
+    else if (gs === STATE.FINAL) handleFinalClick(clickX, clickY);
+    else if (gs === STATE.PLAYING && stage === 0) handleStage0Down(clickX, clickY);
+    if (gs === STATE.PLAYING && stage === 1) tryMilk(clickX, clickY);
+    if (gs === STATE.PLAYING && stage === 3) handlePasteurClick(clickX, clickY);
+    if (gs === STATE.PLAYING && stage === 4) handlePackClick(clickX, clickY);
+  });
+  c.addEventListener('touchmove', function(e) { e.preventDefault();
+    var t = e.touches[0];
+    var r = c.getBoundingClientRect();
+    clickX = t.clientX - r.left; clickY = t.clientY - r.top;
+    if (gs === STATE.PLAYING && stage === 0 && sd.grabbedWheat) { sd.grabbedWheat.x = clickX - sd.wheatOffX; sd.grabbedWheat.y = clickY - sd.wheatOffY; }
+  });
+  c.addEventListener('touchend', function() { touchActive = false; sd.grabbedWheat = null; });
+  window.addEventListener('keydown', function(e) { keys[e.key.toLowerCase()] = true;
+    if (e.key === ' ' || e.key === 'ArrowUp') e.preventDefault();
+  });
+  window.addEventListener('keyup', function(e) { keys[e.key.toLowerCase()] = false; });
 
-function drawStage3(){
-  // TEST THE MILK
-  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,W,H);
-  ctx.fillStyle='#fff';ctx.font='bold 20px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';ctx.fillText('Stage 4 - Test the Milk',W/2,60);
-  ctx.fillStyle='#aaa';ctx.font='14px "Segoe UI"';ctx.fillText('Press  for good milk,  for bad · SPACE = Good',W/2,85);
-  if(s4_samples.length>0){ var s=s4_samples[0]; s.alpha=Math.min(1,s.alpha+0.08);
-    // Bottle
-    var bx=W/2,by=H*0.5;
-    ctx.fillStyle='rgba(255,255,255,0.1)';ctx.beginPath();ctx.moveTo(bx-20,by+30);ctx.lineTo(bx-26,by-20);ctx.lineTo(bx+26,by-20);ctx.lineTo(bx+20,by+30);ctx.closePath();ctx.fill();
-    ctx.strokeStyle='rgba(255,255,255,0.3)';ctx.stroke();
-    ctx.fillStyle=s.good?'rgba(255,255,255,'+(0.7*s.alpha)+')':'rgba(200,180,150,'+(0.7*s.alpha)+')';
-    ctx.beginPath();ctx.moveTo(bx-18,by+26);ctx.lineTo(bx-23,by-5);ctx.lineTo(bx+23,by-5);ctx.lineTo(bx+18,by+26);ctx.closePath();ctx.fill();
-    var g=btn(W*0.3,H*0.78,100,42,'GOOD','#22c55e');
-    var b=btn(W*0.58,H*0.78,100,42,'BAD','#ef4444');
-    if(mouse.clicked){ if(g) judgeSample(true); else if(b) judgeSample(false); }
+  function handleMenuClick(mx, my) {
+    stage = 0; totalScore = 0; stageScores = [0,0,0,0,0];
+    resetStageData(0);
+    gs = STATE.INTRO; introTimer = 0;
   }
-  ctx.fillStyle='#aaa';ctx.font='14px "Segoe UI"';ctx.textAlign='center';
-  ctx.fillText(s4_correct+' / '+s4_total+' correct · '+(s4_target-s4_total)+' left',W/2,H*0.9);
-  if(s4_total>=s4_target) completeStage(3);
-}
-
-function drawStage4(){
-  // PASTEURIZATION
-  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,W,H);
-  ctx.fillStyle='#fff';ctx.font='bold 20px "Segoe UI"';ctx.textAlign='center';ctx.fillText('Stage 5 - Pasteurization',W/2,60);
-  ctx.fillStyle='#aaa';ctx.font='14px "Segoe UI"';ctx.fillText('Hold at 72°C for '+s5_targetSec+' seconds',W/2,85);
-  // Thermometer
-  var tx=W*0.15,ty=H*0.25,tw=50,th=200;
-  rrect(tx,ty,tw,th,25); var tg=ctx.createLinearGradient(0,ty+th,0,ty);
-  tg.addColorStop(0,'#22c55e');tg.addColorStop(0.35,'#22c55e');tg.addColorStop(0.35,GOLD);tg.addColorStop(0.65,GOLD);tg.addColorStop(0.65,'#ef4444');tg.addColorStop(1,'#ef4444');
-  ctx.fillStyle=tg;ctx.fill();
-  ctx.fillStyle='#ef4444';rrect(tx+6,ty+th-th*(s5_temp/100),tw-12,th*(s5_temp/100),18);ctx.fill();
-  ctx.fillStyle='rgba(34,197,94,0.15)';ctx.fillRect(tx-20,ty+th*0.23,tw+40,th*0.18);
-  ctx.fillStyle='#4ade80';ctx.font='10px "Segoe UI"';ctx.textAlign='right';ctx.fillText('72°C',tx-4,ty+th*0.23+18);
-  ctx.fillStyle='#fff';ctx.font='bold 20px "Segoe UI"';ctx.textAlign='center';ctx.fillText(Math.round(s5_temp)+'°C',tx+tw/2,ty+th+26);
-  // Tank
-  var kx=W*0.4,ky=H*0.35,kw=W*0.4,kh=120;
-  rrect(kx,ky,kw,kh,16);ctx.fillStyle='rgba(255,255,255,0.04)';ctx.fill();ctx.strokeStyle='#333';ctx.stroke();
-  // Bubbles
-  if(s5_temp>40){for(var i=0;i<Math.floor(s5_temp/12);i++){ var bx=kx+30+Math.sin(Date.now()/600+i)*40,by_=ky+kh-10-((Date.now()/150+i*40)%(kh-10)); ctx.fillStyle='rgba(255,255,255,'+(0.12+Math.sin(Date.now()/200+i)*0.08)+')';ctx.beginPath();ctx.arc(bx,by_,2.5,0,Math.PI*2);ctx.fill();}}
-  var inZone=s5_temp>=67&&s5_temp<=77;
-  if(inZone){ s5_zoneTime+=1/60; ctx.fillStyle='#4ade80';ctx.font='bold 14px "Segoe UI"';ctx.textAlign='center'; ctx.fillText('IN ZONE · '+(s5_targetSec-s5_zoneTime).toFixed(1)+'s left',W/2,H*0.8); }
-  else { ctx.fillStyle='#f87171';ctx.font='13px "Segoe UI"';ctx.textAlign='center';ctx.fillText('Out of zone!',W/2,H*0.8); }
-  if(btn(W*0.25,H*0.9,110,40,' HEAT','#ef4444')){ s5_heat=true; s5_cool=false; }
-  if(btn(W*0.6,H*0.9,110,40,' COOL','#3b82f6')){ s5_cool=true; s5_heat=false; }
-  if(!mouse.down){s5_heat=false;s5_cool=false;}
-  if(s5_heat) s5_temp=Math.min(100,s5_temp+0.6);
-  if(s5_cool) s5_temp=Math.max(0,s5_temp-0.55);
-  if(!s5_heat&&!s5_cool) s5_temp+=(35-s5_temp)*0.008;
-  if(s5_zoneTime>=s5_targetSec) completeStage(4);
-}
-
-function drawStage5(){
-  // HOMOGENIZATION — click globules to pop them
-  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,W,H);
-  ctx.fillStyle='#fff';ctx.font='bold 20px "Segoe UI"';ctx.textAlign='center';ctx.fillText('Stage 6 - Homogenization',W/2,60);
-  ctx.fillStyle='#aaa';ctx.font='14px "Segoe UI"';ctx.fillText('Click the fat globules to break them down',W/2,85);
-  // Tank
-  rrect(W*0.1,H*0.28,W*0.8,H*0.4,20);ctx.fillStyle='rgba(255,255,255,0.03)';ctx.fill();ctx.strokeStyle='#333';ctx.stroke();
-  // Globules
-  for(var i=s6_globules.length-1;i>=0;i--){
-    var g=s6_globules[i];
-    g.x+=g.vx;g.y+=g.vy;
-    if(g.x<W*0.1||g.x>W*0.9) g.vx*=-1;
-    if(g.y<H*0.28||g.y>H*0.68) g.vy*=-1;
-    if(mouse.clicked&&Math.abs(mouse.x-g.x)<g.r+5&&Math.abs(mouse.y-g.y)<g.r+5){ s6_globules.splice(i,1); s6_popped++; particles.push({x:g.x,y:g.y,vx:(Math.random()-0.5)*4,vy:(Math.random()-0.5)*4,life:1,decay:0.05,color:'#fff',size:3}); continue; }
-    ctx.fillStyle='rgba(255,255,220,0.7)';ctx.beginPath();ctx.arc(g.x,g.y,g.r,0,Math.PI*2);ctx.fill();
-    ctx.strokeStyle='rgba(255,255,255,0.3)';ctx.stroke();
+  function handleClearClick() { advanceStage(); }
+  function handleFinalClick(mx, my) {
+    stage = 0; totalScore = 0; stageScores = [0,0,0,0,0];
+    resetStageData(0);
+    gs = STATE.INTRO; introTimer = 0;
   }
-  ctx.fillStyle='#aaa';ctx.font='14px "Segoe UI"';ctx.textAlign='center';
-  ctx.fillText('Globules broken: '+s6_popped+' / '+s6_target,W/2,H*0.78);
-  if(s6_popped>=s6_target) completeStage(5);
-}
-
-function drawStage6(){
-  // FILL THE BOTTLE
-  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,W,H);
-  ctx.fillStyle='#fff';ctx.font='bold 20px "Segoe UI"';ctx.textAlign='center';ctx.fillText('Stage 7 - Fill the Bottles',W/2,60);
-  ctx.fillStyle='#aaa';ctx.font='14px "Segoe UI"';ctx.fillText('Press SPACE or click when bottle is under the nozzle',W/2,85);
-  // Conveyor
-  ctx.fillStyle='#222';ctx.fillRect(0,H*0.5,W,60);
-  ctx.strokeStyle='#333';for(var x=(Date.now()/20)%30-30;x<W;x+=30){ctx.beginPath();ctx.moveTo(x,H*0.53);ctx.lineTo(x+15,H*0.53+30);ctx.stroke();}
-  // Spawn bottles
-  stageTimer++; if(stageTimer>45-s7_filled*1.5&&s7_filled<s7_target){ stageTimer=0; s7_bottles.push({x:W+20,y:H*0.44+(Math.random()-0.5)*30,filled:false,speed:2+Math.random()*1.2}); }
-  // Nozzle
-  ctx.fillStyle='#555';ctx.fillRect(W/2-8,H*0.35,16,60);
-  ctx.fillStyle=NAVY;ctx.beginPath();ctx.arc(W/2,H*0.35,14,0,Math.PI*2);ctx.fill();
-  // Bottles
-  for(var i=s7_bottles.length-1;i>=0;i--){
-    var b=s7_bottles[i]; b.x-=b.speed; if(b.x<-40){ s7_bottles.splice(i,1); continue; }
-    if(!b.filled){
-      ctx.fillStyle='rgba(255,255,255,0.06)';ctx.beginPath();ctx.moveTo(b.x-13,b.y-25);ctx.lineTo(b.x-16,b.y+22);ctx.lineTo(b.x+16,b.y+22);ctx.lineTo(b.x+13,b.y-25);ctx.closePath();ctx.fill();
-      ctx.strokeStyle='rgba(255,255,255,0.12)';ctx.stroke();
-      ctx.fillStyle=GOLD;rrect(b.x-14,b.y-32,28,9,3);ctx.fill();
-    } else {
-      ctx.fillStyle='rgba(255,255,255,0.25)';ctx.beginPath();ctx.moveTo(b.x-13,b.y-25);ctx.lineTo(b.x-16,b.y+22);ctx.lineTo(b.x+16,b.y+22);ctx.lineTo(b.x+13,b.y-25);ctx.closePath();ctx.fill();
-      ctx.strokeStyle='rgba(255,255,255,0.3)';ctx.stroke();
-      ctx.fillStyle=GOLD;rrect(b.x-14,b.y-32,28,9,3);ctx.fill();
-      ctx.fillStyle='#fff';ctx.font='bold 7px "Segoe UI"';ctx.textAlign='center';ctx.fillText('VITA',b.x,b.y);
+  function handleStage0Down(mx, my) {
+    // Find closest active wheat
+    var closest = null, closestDist = 45;
+    for (var w = 0; w < sd.wheats.length; w++) {
+      var wh = sd.wheats[w];
+      if (!wh.active) continue;
+      var dx = mx - wh.x, dy = my - wh.y;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < closestDist) { closest = wh; closestDist = dist; }
+    }
+    if (closest) {
+      sd.grabbedWheat = closest;
+      sd.wheatOffX = mx - closest.x;
+      sd.wheatOffY = my - closest.y;
     }
   }
-  if(btn(W/2-50,H*0.9,100,40,'FILL','#22c55e')) fillBottle();
-  ctx.fillStyle='#aaa';ctx.font='14px "Segoe UI"';ctx.textAlign='center';ctx.fillText('Filled: '+s7_filled+' / '+s7_target,W/2,H*0.84);
-  if(s7_filled>=s7_target) completeStage(6);
-}
 
-function drawStage7(){
-  // PACK THE BOXES — drag bottles into boxes
-  ctx.fillStyle='#0a0a14';ctx.fillRect(0,0,W,H);
-  ctx.fillStyle='#fff';ctx.font='bold 20px "Segoe UI"';ctx.textAlign='center';ctx.fillText('Stage 8 - Pack the Boxes',W/2,60);
-  ctx.fillStyle='#aaa';ctx.font='14px "Segoe UI"';ctx.fillText('Drag bottles into the boxes',W/2,85);
-  // Boxes
-  for(var i=0;i<s8_boxes.length;i++){
-    var bx=s8_boxes[i];
-    ctx.fillStyle=bx.full?'rgba(76,175,80,0.3)':'rgba(139,90,43,0.5)';
-    rrect(bx.x,bx.y,bx.w,bx.h,10);ctx.fill();ctx.strokeStyle='#5d4037';ctx.lineWidth=2;ctx.stroke();
-    ctx.fillStyle='#fff';ctx.font='bold 10px "Segoe UI"';ctx.textAlign='center';ctx.fillText(bx.full?'':'BOX',bx.x+bx.w/2,bx.y+bx.h/2+4);
+  function advanceStage() {
+    stage++;
+    if (stage >= 5) { gs = STATE.FINAL; return; }
+    resetStageData(stage);
+    gs = STATE.INTRO; introTimer = 0;
   }
-  // Bottles to drag
-  for(var i=s8_bottles.length-1;i>=0;i--){
-    var b=s8_bottles[i];
-    if(s8_drag===b){ b.x=mouse.x; b.y=mouse.y; }
-    var h=mouse.x>b.x-15&&mouse.x<b.x+15&&mouse.y>b.y-35&&mouse.y<b.y+10;
-    if(mouse.clicked&&h&&!s8_drag){ s8_drag=b; }
-    ctx.fillStyle='rgba(255,255,255,0.3)';ctx.beginPath();ctx.moveTo(b.x-10,b.y-30);ctx.lineTo(b.x-14,b.y+18);ctx.lineTo(b.x+14,b.y+18);ctx.lineTo(b.x+10,b.y-30);ctx.closePath();ctx.fill();
-    ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.stroke();
-    ctx.fillStyle=GOLD;rrect(b.x-12,b.y-38,24,8,3);ctx.fill();
-    ctx.fillStyle='#fff';ctx.font='bold 7px "Segoe UI"';ctx.textAlign='center';ctx.fillText('VITA',b.x,b.y-6);
-    if(h&&!s8_drag) ctx.strokeStyle=GOLD; ctx.lineWidth=2; ctx.stroke();
-  }
-  ctx.fillStyle='#aaa';ctx.font='14px "Segoe UI"';ctx.textAlign='center';ctx.fillText('Packed: '+s8_packed+' / '+s8_target,W/2,H*0.92);
-  if(s8_packed>=s8_target) completeStage(7);
-}
 
-function drawStage8(){
-  // DELIVER — drive truck to houses
-  var grad=ctx.createLinearGradient(0,0,0,H);
-  grad.addColorStop(0,'#7eb8da');grad.addColorStop(0.55,'#a3cee8');grad.addColorStop(0.6,'#8bc34a');grad.addColorStop(1,'#558b2f');
-  ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
-  // Road
-  ctx.fillStyle='#555';ctx.fillRect(0,H*0.55,W,H*0.25);
-  ctx.fillStyle='#ff0';ctx.fillRect((s9_truckX*60)%W,H*0.67,20,3);
-  // Delivery points
-  for(var i=0;i<s9_houses.length;i++){
-    var h=s9_houses[i];
-    ctx.fillStyle=NAVY;ctx.beginPath();ctx.arc(h.x,h.y,18,0,Math.PI*2);ctx.fill();
-    ctx.fillStyle=GOLD;ctx.font='bold 10px "Segoe UI"';ctx.textAlign='center';ctx.fillText('V',h.x,h.y+4);
-    if(s9_delivered>i){ ctx.fillStyle='rgba(76,175,80,0.4)';ctx.beginPath();ctx.arc(h.x,h.y,28,0,Math.PI*2);ctx.fill(); }
+  function finishStage() {
+    sd.stars = stageScores[stage] >= 80 ? 3 : stageScores[stage] >= 50 ? 2 : 1;
+    totalScore += stageScores[stage];
+    gs = STATE.STAGE_CLEAR; clearTimer = 0;
+    if (stage === 4 && totalScore > bestScore) {
+      bestScore = totalScore;
+      try { localStorage.setItem('vita-farmtofridge-best', bestScore); } catch(e) {}
+    }
   }
-  // Truck
-  if(keys['arrowleft']||keys['a']){ s9_truckX-=3; if(s9_truckX<0) s9_truckX=0; }
-  if(keys['arrowright']||keys['d']){ s9_truckX+=3; if(s9_truckX>W-80) s9_truckX=W-80; }
-  var tx2=s9_truckX,ty2=H*0.52;
-  ctx.fillStyle=NAVY;rrect(tx2,ty2,70,35,6);ctx.fill();
-  ctx.fillStyle='#0D2E66';rrect(tx2-8,ty2+25,86,18,5);ctx.fill();
-  ctx.fillStyle='#333';ctx.beginPath();ctx.arc(tx2+12,ty2+37,7,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(tx2+58,ty2+37,7,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle='#fff';ctx.fillRect(tx2+48,ty2-14,16,16);
-  ctx.fillStyle=GOLD;ctx.font='bold 10px "Segoe UI"';ctx.textAlign='center';ctx.fillText('VITA',tx2+35,ty2+20);
-  // Deliver
-  for(var i=0;i<s9_houses.length;i++){
-    var h=s9_houses[i];
-    if(i===s9_delivered&&Math.abs(tx2+35-h.x)<30&&Math.abs(ty2+18-h.y)<40){ s9_delivered++; particles.push({x:h.x,y:h.y,vx:0,vy:-4,life:1,decay:0.04,color:GOLD,size:5}); break; }
-  }
-  ctx.fillStyle='rgba(0,0,0,0.5)';rrect(W*0.2,H*0.05,W*0.6,30,8);ctx.fill();
-  ctx.fillStyle='#fff';ctx.font='bold 14px "Segoe UI"';ctx.textAlign='center';
-  ctx.fillText('Drive to each house · Delivered: '+s9_delivered+'/'+s9_target+'  (Arrow keys)',W/2,26);
-  if(s9_delivered>=s9_target) completeStage(8);
-}
 
-function drawVictory(){
-  ctx.fillStyle='#050a14';ctx.fillRect(0,0,W,H);
-  ctx.fillStyle=GOLD;ctx.font='bold '+Math.min(W*0.06,H*0.08)+'px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
-  ctx.fillText('MILK DELIVERED!',W/2,H*0.35);
-  ctx.fillStyle='#fff';ctx.font='bold '+Math.min(W*0.03,H*0.04)+'px "Segoe UI"';
-  ctx.fillText('From cow to customer — the Vita way!',W/2,H*0.45);
-  var stages=['Feed Cow ','Milk Cow ','Transport ','Test ','Pasteurize ','Homogenize ','Bottle ','Pack ','Deliver '];
-  for(var i=0;i<stages.length;i++){
-    ctx.fillStyle=i<3?GOLD:'#4ade80';ctx.font='13px "Segoe UI"';
-    ctx.fillText(stages[i],W/2-(stages.length-1)*45+i*90,H*0.58);
-  }
-  if(btn(W/2-80,H*0.7,160,48,'PLAY AGAIN',GOLD)){ stage=0; stageDone=[]; initStage(0); }
-}
+  // ─── Update ───
+  function update(dt) {
+    if (gs === STATE.INTRO) { introTimer += dt; if (introTimer > 2.5) { gs = STATE.PLAYING; introTimer = 0; } return; }
+    if (gs === STATE.STAGE_CLEAR) { clearTimer += dt; return; }
+    if (gs !== STATE.PLAYING) return;
 
-// ============ MAIN LOOP ============
-function draw(){
-  ctx.clearRect(0,0,W,H);
-  if(stage===0) drawStage0();
-  else if(stage===1) drawStage1();
-  else if(stage===2) drawStage2();
-  else if(stage===3) drawStage3();
-  else if(stage===4) drawStage4();
-  else if(stage===5) drawStage5();
-  else if(stage===6) drawStage6();
-  else if(stage===7) drawStage7();
-  else if(stage===8) drawStage8();
-  else if(stage>=totalStages) drawVictory();
-  if(stage>0&&stage<totalStages) drawHUD();
-  // Particles
-  for(var i=particles.length-1;i>=0;i--){var p=particles[i];p.x+=p.vx;p.y+=p.vy;p.life-=p.decay;if(p.life<=0){particles.splice(i,1);continue;}ctx.fillStyle=p.color+Math.floor(p.life*255).toString(16).padStart(2,'0');ctx.beginPath();ctx.arc(p.x,p.y,p.size*p.life,0,Math.PI*2);ctx.fill();}
-  // Transition overlay
-  if(transitionAlpha>0.01&&stage<totalStages){transitionAlpha+=0.025;ctx.fillStyle='rgba(0,0,0,'+Math.min(1,transitionAlpha)+')';ctx.fillRect(0,0,W,H);ctx.fillStyle=GOLD;ctx.font='bold 18px "Segoe UI"';ctx.textAlign='center';ctx.fillText(transitionText,W/2,H/2);}
-  mouse.clicked=false;
-}
-function loop(){ draw(); requestAnimationFrame(loop); }
-initStage(0);
-loop();
+    if (stage === 0) updateStage0(dt);
+    else if (stage === 1) updateStage1(dt);
+    else if (stage === 2) updateStage2(dt);
+    else if (stage === 3) updateStage3(dt);
+    else if (stage === 4) updateStage4(dt);
+  }
+
+  // Stage 0: Feed cows
+  function updateStage0(dt) {
+    var groundY = H * 0.78;
+    for (var i = 0; i < sd.cows.length; i++) {
+      var cow = sd.cows[i];
+      cow.bob += dt * 2;
+      if (cow.feed >= cow.need) continue;
+
+      for (var w = sd.wheats.length - 1; w >= 0; w--) {
+        var wh = sd.wheats[w];
+        if (!wh.active) continue;
+        if (wh === sd.grabbedWheat) continue; // being dragged
+        var dx = wh.x - (cow.x + cow.w / 2);
+        var dy = wh.y - (cow.y + cow.h / 2);
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 50) {
+          cow.feed++;
+          cow.happy = 0.8;
+          wh.active = false; // wheat eaten, disappears
+          if (cow.feed >= cow.need) { sd.fedCount++; stageScores[stage] += 15; }
+          // Spawn new wheat elsewhere
+          spawnWheat(groundY);
+        }
+      }
+      if (cow.happy > 0) cow.happy = Math.max(0, cow.happy - dt);
+    }
+    // Ensure at least 4 active wheats
+    var activeCount = 0;
+    for (var w = 0; w < sd.wheats.length; w++) {
+      if (sd.wheats[w].active) activeCount++;
+    }
+    while (activeCount < 4) {
+      spawnWheat(groundY);
+      activeCount++;
+    }
+    if (sd.fedCount >= sd.cowTarget) { stageScores[stage] = Math.max(20, stageScores[stage]); finishStage(); }
+  }
+
+  function spawnWheat(groundY) {
+    sd.wheats.push({
+      x: W * 0.1 + Math.random() * W * 0.6,
+      y: groundY - 20 - Math.random() * 14,
+      active: true
+    });
+  }
+
+  // Stage 1: Milking - click udder
+  function updateStage1(dt) {
+    // Drag full bucket to facility
+    if (sd.bucketDragging) {
+      sd.bucketDragX = clickX - sd.dragOffX;
+      sd.bucketDragY = clickY - sd.dragOffY;
+      var dfx = sd.bucketDragX - sd.facilityX, dfy = sd.bucketDragY - sd.facilityY;
+      if (Math.sqrt(dfx*dfx + dfy*dfy) < 60) {
+        stageScores[stage] = Math.max(10, stageScores[stage] + 20);
+        finishStage();
+      }
+    }
+    if (!mouseDown && !touchActive) sd.bucketDragging = false;
+  }
+
+  function tryMilk(mx, my) {
+    // If holding bucket to drag
+    if (sd.bucketDragging) return;
+    if (sd.allDone) {
+      var dx2 = mx - sd.bucketDragX, dy2 = my - sd.bucketDragY;
+      if (Math.sqrt(dx2*dx2 + dy2*dy2) < 50) {
+        sd.bucketDragging = true;
+        sd.dragOffX = mx - sd.bucketDragX;
+        sd.dragOffY = my - sd.bucketDragY;
+      }
+      return;
+    }
+    // Check each cow
+    for (var ci = 0; ci < sd.milkCows.length; ci++) {
+      var cow = sd.milkCows[ci];
+      if (cow.done) continue;
+      var dx = mx - cow.udderCX, dy = my - cow.udderCY;
+      if (Math.sqrt(dx*dx + dy*dy) < 50) {
+        cow.milkAmount += 15 + Math.floor(Math.random() * 7);
+        stageScores[stage] += 2;
+        sd.milkStreams.push({ life: 0.5, x: cow.udderCX, y: cow.udderCY, bucketX: cow.bucketX, bucketY: cow.bucketY });
+        if (cow.milkAmount >= sd.milkTarget) {
+          cow.done = true;
+          stageScores[stage] += 10;
+        }
+        // Check if all done
+        sd.allDone = true;
+        for (var cj = 0; cj < sd.milkCows.length; cj++) {
+          if (!sd.milkCows[cj].done) { sd.allDone = false; break; }
+        }
+        if (sd.allDone) {
+          sd.bucketDragX = cow.bucketX;
+          sd.bucketDragY = cow.bucketY;
+        }
+        return;
+      }
+    }
+  }
+
+  // Stage 2: Ice Catcher - cool the milk
+  function updateStage2(dt) {
+    // Move bucket to mouse/touch
+    sd.bucketX = clickX;
+    if (sd.bucketX < 30) sd.bucketX = 30;
+    if (sd.bucketX > W - 30) sd.bucketX = W - 30;
+
+    // Temp rises naturally
+    sd.temp += dt * 1.2;
+    sd.tempTime += dt;
+
+    // Spawn ice/heat blocks
+    sd.iceSpawnTimer += dt;
+    if (sd.iceSpawnTimer > 0.55) {
+      sd.iceSpawnTimer = 0;
+      var isHeat = Math.random() < 0.2;
+      sd.iceBlocks.push({
+        x: 40 + Math.random() * (W - 80),
+        y: -20,
+        r: 14 + Math.random() * 10,
+        vy: 160 + Math.random() * 100,
+        type: isHeat ? 'heat' : 'ice',
+        rot: Math.random() * Math.PI * 2,
+        sparkle: Math.random() * Math.PI * 2
+      });
+    }
+
+    // Update blocks
+    for (var i = sd.iceBlocks.length - 1; i >= 0; i--) {
+      var b = sd.iceBlocks[i];
+      b.y += b.vy * dt;
+      b.rot += dt * 3;
+      b.sparkle += dt * 5;
+      if (b.y > H + 40) { sd.iceBlocks.splice(i, 1); continue; }
+
+      // Collision with bucket
+      var dx = Math.abs(b.x - sd.bucketX);
+      var dy = b.y - (H * 0.78 - 10);
+      if (dx < 38 && dy > -20 && dy < 15) {
+        if (b.type === 'ice') {
+          sd.temp = Math.max(0.5, sd.temp - 1.2);
+          stageScores[stage] += 3;
+          // Splash particles
+          for (var j = 0; j < 6; j++) {
+            sd.iceParticles.push({ x: b.x, y: H*0.78-10, vx: (Math.random()-0.5)*80, vy: -40-Math.random()*60, life: 0.5, color: '#a8e6ff' });
+          }
+        } else {
+          sd.temp += 1.8;
+          stageScores[stage] = Math.max(0, stageScores[stage] - 1);
+          for (var j = 0; j < 6; j++) {
+            sd.iceParticles.push({ x: b.x, y: H*0.78-10, vx: (Math.random()-0.5)*80, vy: -40-Math.random()*60, life: 0.5, color: '#ff8866' });
+          }
+        }
+        sd.iceBlocks.splice(i, 1);
+      }
+    }
+
+    // Update particles
+    for (var i = sd.iceParticles.length - 1; i >= 0; i--) {
+      var p = sd.iceParticles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 120 * dt;
+      p.life -= dt;
+      if (p.life <= 0) sd.iceParticles.splice(i, 1);
+    }
+
+    sd.temp = Math.max(0.2, Math.min(9.8, sd.temp));
+    if (sd.temp > 7 || sd.temp < 1) { stageScores[stage] = Math.max(0, stageScores[stage] - Math.floor(dt * 8)); }
+    if (sd.tempTime >= sd.tempTarget) { stageScores[stage] += Math.floor((1 - Math.abs(sd.temp - 4) / 4) * 50); finishStage(); }
+  }
+
+  // Stage 3: Bacteria Pop - pasteurization
+  function updateStage3(dt) {
+    sd.pasteurTime += dt;
+    // Natural cooling
+    sd.pasteurTemp -= dt * 1.5;
+    if (sd.pasteurTemp < 20) sd.pasteurTemp = 20;
+
+    // Spawn bacteria from edges
+    sd.bactSpawnTimer += dt;
+    if (sd.bactSpawnTimer > 0.65) {
+      sd.bactSpawnTimer = 0;
+      var angle = Math.random() * Math.PI * 2;
+      var spawnR = sd.tankR + 20;
+      sd.bacteria.push({
+        x: sd.tankCX + Math.cos(angle) * spawnR,
+        y: sd.tankCY + Math.sin(angle) * spawnR,
+        r: 8 + Math.random() * 6,
+        speed: 30 + Math.random() * 45,
+        alive: true
+      });
+    }
+
+    // Move bacteria toward center
+    for (var i = sd.bacteria.length - 1; i >= 0; i--) {
+      var b = sd.bacteria[i];
+      if (!b.alive) { sd.bacteria.splice(i, 1); continue; }
+      var dx = sd.tankCX - b.x, dy = sd.tankCY - b.y;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 15) {
+        // Bacteria reached center - contamination!
+        sd.pasteurTime = Math.max(0, sd.pasteurTime - 3);
+        stageScores[stage] = Math.max(0, stageScores[stage] - 5);
+        sd.bacteria.splice(i, 1);
+        // Red flash particles
+        for (var j = 0; j < 10; j++) {
+          sd.heatRings.push({ x: sd.tankCX, y: sd.tankCY, r: 5, maxR: 40, life: 0.5, color: '#ef4444' });
+        }
+        continue;
+      }
+      b.x += (dx / dist) * b.speed * dt;
+      b.y += (dy / dist) * b.speed * dt;
+    }
+
+    // Process heat rings from clicks
+    for (var i = sd.heatRings.length - 1; i >= 0; i--) {
+      var hr = sd.heatRings[i];
+      hr.r += dt * 100;
+      hr.life -= dt;
+      if (hr.life <= 0) { sd.heatRings.splice(i, 1); continue; }
+      // Kill bacteria in ring
+      for (var j = sd.bacteria.length - 1; j >= 0; j--) {
+        var b = sd.bacteria[j];
+        var dx = b.x - hr.x, dy = b.y - hr.y;
+        if (Math.sqrt(dx*dx+dy*dy) < hr.r + b.r) {
+          b.alive = false;
+          stageScores[stage] += 5;
+        }
+      }
+    }
+
+    sd.pasteurTemp = Math.min(95, sd.pasteurTemp);
+    // Temp penalty/bonus
+    if (sd.pasteurTemp > 80 || sd.pasteurTemp < 60) {
+      stageScores[stage] = Math.max(0, stageScores[stage] - Math.floor(dt * 3));
+    } else if (sd.pasteurTemp > 68 && sd.pasteurTemp < 78) {
+      stageScores[stage] += Math.floor(dt * 2);
+    }
+
+    if (sd.pasteurTime >= sd.pasteurTarget) {
+      stageScores[stage] = Math.max(10, stageScores[stage] + Math.floor((1 - Math.abs(sd.pasteurTemp-72)/12) * 40));
+      finishStage();
+    }
+  }
+
+  function handlePasteurClick(mx, my) {
+    // Check if click is inside tank
+    var dx = mx - sd.tankCX, dy = my - sd.tankCY;
+    if (Math.sqrt(dx*dx + dy*dy) < sd.tankR) {
+      sd.pasteurTemp += 3;
+      sd.heatRings.push({ x: mx, y: my, r: 8, maxR: 70, life: 0.6, color: '#f97316' });
+    }
+  }
+
+  // Stage 4: Pack & Deliver
+  function updateStage4(dt) {
+    // Bottle on counter is grabbed - follow cursor
+    if (sd.grabbedIdx >= 0) {
+      var gb = sd.packBottles[sd.grabbedIdx];
+      gb.x += (clickX - gb.x) * 0.25;
+      gb.y += (clickY - gb.y) * 0.25;
+    }
+    // Spawn new bottles on counter
+    sd.packSpawnTimer += dt;
+    var onCounter = 0;
+    for (var i = 0; i < sd.packBottles.length; i++) {
+      if (!sd.packBottles[i].packed) onCounter++;
+    }
+    if (onCounter < 4 && sd.packSpawnTimer > 0.5 && sd.packedCount + onCounter < sd.packTarget) {
+      sd.packSpawnTimer = 0;
+      var slot = 0;
+      var taken = [];
+      for (var i = 0; i < sd.packBottles.length; i++) {
+        if (!sd.packBottles[i].packed) taken.push(i);
+      }
+      for (var s = 0; s < 6; s++) {
+        var found = false;
+        for (var t = 0; t < taken.length; t++) {
+          if (sd.packBottles[taken[t]].slotIdx === s) { found = true; break; }
+        }
+        if (!found) { slot = s; break; }
+      }
+      sd.packBottles.push({
+        x: sd.counterX + slot * 70, y: sd.counterY - 30,
+        slotIdx: slot, packed: false, grabbed: false
+      });
+    }
+  }
+
+  function handlePackClick(mx, my) {
+    // Check if clicking on the crate to drop
+    if (sd.grabbedIdx >= 0) {
+      var dx = mx - sd.crateCX, dy = my - sd.crateCY;
+      if (Math.abs(dx) < 70 && Math.abs(dy) < 50) {
+        // Drop into crate
+        var gb = sd.packBottles[sd.grabbedIdx];
+        gb.packed = true;
+        gb.grabbed = false;
+        gb.x = sd.crateCX - 40 + (sd.packedCount % 4) * 28;
+        gb.y = sd.crateCY - 15 + Math.floor(sd.packedCount / 4) * 30;
+        sd.packedCount++;
+        sd.grabbedIdx = -1;
+        stageScores[stage] += 8;
+        if (sd.packedCount >= sd.packTarget) {
+          stageScores[stage] = Math.max(10, stageScores[stage]);
+          finishStage();
+        }
+        return;
+      }
+    }
+    // Check if clicking a bottle on counter to grab
+    if (sd.grabbedIdx >= 0) return; // already holding
+    for (var i = sd.packBottles.length - 1; i >= 0; i--) {
+      var b = sd.packBottles[i];
+      if (b.packed) continue;
+      var dx = mx - b.x, dy = my - b.y;
+      if (Math.abs(dx) < 24 && Math.abs(dy) < 36) {
+        b.grabbed = true;
+        sd.grabbedIdx = i;
+        return;
+      }
+    }
+  }
+
+  // ─── Draw Functions ───
+
+  function drawBackground(skyTop, skyBot, groundCol) {
+    var grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, skyTop || '#87CEEB');
+    grad.addColorStop(1, skyBot || '#4a8ab5');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+    if (groundCol) { ctx.fillStyle = groundCol; ctx.fillRect(0, H*0.78, W, H*0.22); }
+  }
+
+  function drawMenu() {
+    drawBackground('#1a2a4a', '#0d1a30', '');
+    // Stars
+    for (var i = 0; i < 50; i++) {
+      var sx = (i * 173) % W, sy = (i * 97) % (H * 0.5);
+      ctx.fillStyle = 'rgba(255,255,255,' + (0.3 + 0.5 * Math.sin(Date.now()/2000 + i)) + ')';
+      ctx.beginPath(); ctx.arc(sx, sy, 1.2, 0, Math.PI * 2); ctx.fill();
+    }
+    // Title glow
+    var cx = W / 2, cy = H * 0.3;
+    var gl = ctx.createRadialGradient(cx, cy, 20, cx, cy, 300);
+    gl.addColorStop(0, 'rgba(242,194,0,0.2)'); gl.addColorStop(1, 'rgba(242,194,0,0)');
+    ctx.fillStyle = gl; ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = G;
+    ctx.font = 'bold ' + Math.min(48, W * 0.068) + 'px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('VITA', cx, cy);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold ' + Math.min(28, W * 0.04) + 'px "Segoe UI",system-ui,sans-serif';
+    ctx.fillText('Farm to Fridge', cx, cy + Math.min(50, W * 0.06));
+    ctx.fillStyle = '#aac';
+    ctx.font = Math.min(16, W * 0.024) + 'px "Segoe UI",system-ui,sans-serif';
+    ctx.fillText('Learn how milk is made in 5 fun stages!', cx, cy + Math.min(85, W * 0.105));
+
+    // Process icons
+    var icons = ['F','M','C','P','B'];
+    var iconX = cx - (icons.length - 1) * 38 / 2;
+    var iconY = cy + Math.min(130, W * 0.17);
+    for (var i = 0; i < icons.length; i++) {
+      var ix = iconX + i * 38;
+      ctx.fillStyle = STAGES[i].color;
+      ctx.beginPath(); ctx.arc(ix, iconY, 14, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#000';
+      ctx.font = 'bold 13px "Segoe UI",system-ui,sans-serif';
+      ctx.fillText(icons[i], ix, iconY + 5);
+      if (i < icons.length - 1) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(ix + 15, iconY); ctx.lineTo(ix + 22, iconY); ctx.stroke();
+      }
+    }
+
+    // Play button
+    var bw = 200, bh = 54, bx = cx - bw/2, by = H * 0.68;
+    var pulse = 1 + Math.sin(Date.now()/500) * 0.025;
+    ctx.save(); ctx.translate(cx, by + bh/2); ctx.scale(pulse, pulse);
+    rrect(-bw/2, -bh/2, bw, bh, 27);
+    ctx.fillStyle = G; ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 20px "Segoe UI",system-ui,sans-serif';
+    ctx.fillText('PLAY', 0, 7);
+    ctx.restore();
+
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.font = Math.min(13, W * 0.019) + 'px "Segoe UI",system-ui,sans-serif';
+    ctx.fillText('Click or tap to start', cx, by + bh + 32);
+    if (bestScore > 0) {
+      ctx.fillStyle = G; ctx.font = 'bold 14px "Segoe UI",system-ui,sans-serif';
+      ctx.fillText('Best Score: ' + bestScore, cx, by + bh + 56);
+    }
+  }
+
+  function rrect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x+r, y); ctx.lineTo(x+w-r, y);
+    ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+    ctx.lineTo(x+w, y+h-r);
+    ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+    ctx.lineTo(x+r, y+h);
+    ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+    ctx.lineTo(x, y+r);
+    ctx.quadraticCurveTo(x, y, x+r, y);
+    ctx.closePath();
+  }
+
+  function drawStageIntro() {
+    drawBackground('#0d1a30', '#060f1c', '');
+    var alpha = Math.min(1, introTimer / 0.6);
+    ctx.globalAlpha = alpha;
+
+    var st = STAGES[stage];
+    ctx.fillStyle = st.color;
+    ctx.font = 'bold 16px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Stage ' + (stage + 1) + ' of 5', W/2, H*0.22);
+
+    ctx.fillStyle = st.color;
+    ctx.font = 'bold ' + Math.min(42, W*0.06) + 'px "Segoe UI",system-ui,sans-serif';
+    ctx.fillText(st.name, W/2, H*0.32);
+
+    ctx.fillStyle = st.color;
+    ctx.beginPath(); ctx.arc(W/2, H*0.39, 22, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 19px "Segoe UI",system-ui,sans-serif';
+    ctx.fillText(st.icon, W/2, H*0.39 + 7);
+
+    ctx.fillStyle = '#ddd';
+    ctx.font = Math.min(15, W*0.022) + 'px "Segoe UI",system-ui,sans-serif';
+    var words = st.desc.split(' ');
+    var line = ''; var ly = H*0.50;
+    for (var i = 0; i < words.length; i++) {
+      var test = line + words[i] + ' ';
+      if (ctx.measureText(test).width > W * 0.75) { ctx.fillText(line, W/2, ly); line = words[i] + ' '; ly += 26; }
+      else line = test;
+    }
+    ctx.fillText(line, W/2, ly);
+
+    // Progress bar
+    var pw = 200, ph = 4, px = W/2 - pw/2, py = H*0.72;
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    rrect(px, py, pw, ph, 2); ctx.fill();
+    ctx.fillStyle = st.color;
+    rrect(px, py, pw * introTimer / 2.5, ph, 2); ctx.fill();
+
+    ctx.globalAlpha = 1;
+  }
+
+  function drawStageClear() {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0, 0, W, H);
+
+    var st = STAGES[stage];
+    var ca = Math.min(1, clearTimer / 0.5);
+    ctx.globalAlpha = ca;
+    ctx.fillStyle = st.color;
+    ctx.font = 'bold ' + Math.min(36, W*0.052) + 'px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Stage Complete!', W/2, H*0.28);
+
+    // Stars
+    for (var i = 0; i < 3; i++) {
+      var sx = W/2 + (i-1)*50, sy = H*0.38;
+      ctx.fillStyle = i < sd.stars ? G : 'rgba(255,255,255,0.2)';
+      ctx.font = 'bold 32px "Segoe UI",system-ui,sans-serif';
+      ctx.fillText('*', sx, sy);
+    }
+
+    ctx.fillStyle = '#fff';
+    ctx.font = Math.min(16, W*0.024) + 'px "Segoe UI",system-ui,sans-serif';
+    ctx.fillText(stageScores[stage] + ' points', W/2, H*0.48);
+
+    // Fact box
+    var fw = Math.min(500, W*0.7), fh = 70, fx = W/2 - fw/2, fy = H*0.55;
+    ctx.fillStyle = 'rgba(19,75,141,0.5)';
+    rrect(fx, fy, fw, fh, 12); ctx.fill();
+    ctx.fillStyle = G;
+    ctx.font = 'bold 11px "Segoe UI",system-ui,sans-serif';
+    ctx.fillText('Did you know?', W/2, fy + 20);
+    ctx.fillStyle = '#ddd';
+    ctx.font = Math.min(13, W*0.02) + 'px "Segoe UI",system-ui,sans-serif';
+    var fwords = st.fact.split(' ');
+    var fline = ''; var fly = fy + 42;
+    for (var i = 0; i < fwords.length; i++) {
+      var ftest = fline + fwords[i] + ' ';
+      if (ctx.measureText(ftest).width > fw - 30) { ctx.fillText(fline, W/2, fly); fline = fwords[i] + ' '; fly += 22; }
+      else fline = ftest;
+    }
+    ctx.fillText(fline, W/2, fly);
+
+    // Continue button
+    var bw = 170, bh = 44, bx = W/2 - bw/2, by = H*0.78;
+    rrect(bx, by, bw, bh, 22);
+    ctx.fillStyle = G; ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 17px "Segoe UI",system-ui,sans-serif';
+    ctx.fillText(stage < 4 ? 'NEXT STAGE' : 'SEE RESULTS', W/2, by + bh/2 + 6);
+    ctx.globalAlpha = 1;
+  }
+
+  function drawFinal() {
+    drawBackground('#0d1a30', '#060f1c', '');
+    ctx.fillStyle = G;
+    ctx.font = 'bold ' + Math.min(42, W*0.06) + 'px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Farm to Fridge Complete!', W/2, H*0.15);
+    ctx.fillStyle = '#fff';
+    ctx.font = Math.min(20, W*0.03) + 'px "Segoe UI",system-ui,sans-serif';
+    ctx.fillText('Total Score: ' + totalScore, W/2, H*0.22);
+
+    if (totalScore >= bestScore && totalScore > 0) {
+      ctx.fillStyle = G;
+      ctx.font = 'bold 16px "Segoe UI",system-ui,sans-serif';
+      ctx.fillText('NEW BEST!', W/2, H*0.28);
+    }
+
+    // Stage results
+    var sy = H*0.35;
+    for (var i = 0; i < 5; i++) {
+      var st = STAGES[i];
+      var sx = W/2 - 250, sw = 500;
+      if (W < 600) { sx = 20; sw = W - 40; }
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      rrect(sx, sy, sw, 38, 10); ctx.fill();
+      ctx.fillStyle = st.color;
+      ctx.font = 'bold 14px "Segoe UI",system-ui,sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(st.icon + '  ' + st.name, sx + 14, sy + 26);
+
+      var starStr = '';
+      var ss = stageScores[i] >= 80 ? 3 : stageScores[i] >= 50 ? 2 : 1;
+      for (var j = 0; j < ss; j++) starStr += '*';
+      ctx.fillStyle = G;
+      ctx.textAlign = 'right';
+      ctx.fillText(starStr, sx + sw - 60, sy + 26);
+      ctx.fillStyle = '#aaa';
+      ctx.fillText(stageScores[i] + ' pts', sx + sw - 14, sy + 26);
+      sy += 48;
+    }
+
+    // Milk journey fact
+    ctx.fillStyle = 'rgba(19,75,141,0.45)';
+    rrect(W/2 - 230, sy + 10, 460, 48, 12); ctx.fill();
+    ctx.fillStyle = '#ccc';
+    ctx.font = 'italic ' + Math.min(13, W*0.019) + 'px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Now you know how Vita milk goes from farm to your fridge!', W/2, sy + 28);
+    ctx.fillText('Fresh, safe, and delicious - every single day.', W/2, sy + 44);
+
+    // Replay button
+    var bw = 190, bh = 46, bx = W/2 - bw/2, by = sy + 80;
+    rrect(bx, by, bw, bh, 23);
+    ctx.fillStyle = G; ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 18px "Segoe UI",system-ui,sans-serif';
+    ctx.fillText('PLAY AGAIN', W/2, by + bh/2 + 6);
+  }
+
+  // ─── Stage Draw Functions ───
+
+  function drawStage0() {
+    var groundY = H * 0.78;
+    // Sky
+    var grad = ctx.createLinearGradient(0, 0, 0, groundY);
+    grad.addColorStop(0, '#87CEEB'); grad.addColorStop(0.7, '#c8e6c9'); grad.addColorStop(1, '#a5d6a7');
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, W, groundY);
+    // Ground
+    ctx.fillStyle = '#5a9e3a'; ctx.fillRect(0, groundY, W, H - groundY);
+    // Dirt path near cows
+    ctx.fillStyle = '#8B7355';
+    ctx.fillRect(0, groundY - 6, W, 20);
+
+    // Fence
+    ctx.strokeStyle = '#6d4c00'; ctx.lineWidth = 3; ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(0, groundY - 16); ctx.lineTo(W, groundY - 16); ctx.stroke();
+    for (var fx = 20; fx < W; fx += 80) {
+      ctx.fillStyle = '#8B6914'; ctx.fillRect(fx, groundY - 28, 6, 14);
+    }
+
+    // Wheat on ground (all active pieces)
+    for (var wi = 0; wi < sd.wheats.length; wi++) {
+      var wh = sd.wheats[wi];
+      if (!wh.active) continue;
+      var wx = wh.x, wy = wh.y;
+      // Stems
+      for (var s = -8; s <= 8; s += 6) {
+        ctx.strokeStyle = '#8B9A2B'; ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(wx + s + 2, wy + 20);
+        ctx.quadraticCurveTo(wx + s, wy, wx + s + 3, wy - 14);
+        ctx.stroke();
+      }
+      // Wheat grains
+      for (var g = -3; g <= 3; g += 3) {
+        ctx.fillStyle = '#D4A830';
+        ctx.beginPath(); ctx.ellipse(wx + g + 8, wy - 10, 4, 7, 0.3, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(wx + g + 12, wy - 8, 4, 7, -0.3, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillStyle = '#E8C840';
+      ctx.beginPath(); ctx.ellipse(wx + 2, wy - 12, 5, 9, 0, 0, Math.PI * 2); ctx.fill();
+      // Glow
+      ctx.fillStyle = 'rgba(255,255,200,0.25)';
+      ctx.beginPath(); ctx.arc(wx + 2, wy - 2, 20, 0, Math.PI * 2); ctx.fill();
+      // Grab highlight
+      if (wh === sd.grabbedWheat) {
+        ctx.strokeStyle = G; ctx.lineWidth = 2; ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.arc(wx + 2, wy - 2, 25, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
+    // Cows on ground
+    for (var i = 0; i < sd.cows.length; i++) {
+      var cow = sd.cows[i];
+      var cx = cow.x, cy = cow.y + Math.sin(cow.bob) * 2;
+      var cw = cow.w, ch = cow.h;
+      // Shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.12)';
+      ctx.beginPath(); ctx.ellipse(cx + cw/2, groundY - 2, cw*0.42, 4, 0, 0, Math.PI*2); ctx.fill();
+
+      ctx.save();
+      // Clip to cow area for clean spots
+      ctx.beginPath(); ctx.ellipse(cx + cw/2, cy + ch*0.45, cw*0.48, ch*0.42, 0, 0, Math.PI*2); ctx.clip();
+
+      // Base body color
+      ctx.fillStyle = '#fefef8';
+      ctx.fillRect(cx - 10, cy - 20, cw + 20, ch + 40);
+
+      // Holstein spots
+      ctx.fillStyle = '#1a1a1a';
+      ctx.beginPath(); ctx.ellipse(cx + cw*0.25, cy + ch*0.3, cw*0.18, ch*0.22, 0.1, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(cx + cw*0.6, cy + ch*0.25, cw*0.22, ch*0.18, -0.2, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(cx + cw*0.4, cy + ch*0.55, cw*0.16, ch*0.2, 0, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(cx + cw*0.75, cy + ch*0.5, cw*0.13, ch*0.16, 0.3, 0, Math.PI*2); ctx.fill();
+
+      ctx.restore();
+
+      // Neck
+      ctx.fillStyle = '#fefef8';
+      ctx.beginPath(); ctx.moveTo(cx + cw*0.85, cy + ch*0.15); ctx.lineTo(cx + cw + 5, cy + ch*0.05);
+      ctx.lineTo(cx + cw + 5, cy + ch*0.35); ctx.lineTo(cx + cw*0.8, cy + ch*0.4);
+      ctx.closePath(); ctx.fill();
+      // Neck spot
+      ctx.fillStyle = '#1a1a1a';
+      ctx.beginPath(); ctx.ellipse(cx + cw*0.9, cy + ch*0.22, cw*0.06, ch*0.08, 0, 0, Math.PI*2); ctx.fill();
+
+      // Head
+      ctx.fillStyle = '#fefef8';
+      ctx.beginPath(); ctx.ellipse(cx + cw + 12, cy + ch*0.18, ch*0.3, ch*0.22, 0.15, 0, Math.PI*2); ctx.fill();
+      // Forehead spot
+      ctx.fillStyle = '#1a1a1a';
+      ctx.beginPath(); ctx.ellipse(cx + cw + 6, cy + ch*0.1, ch*0.12, ch*0.08, 0, 0, Math.PI*2); ctx.fill();
+      // Muzzle
+      ctx.fillStyle = '#f0d5d0';
+      ctx.beginPath(); ctx.ellipse(cx + cw + 24, cy + ch*0.24, ch*0.14, ch*0.11, 0, 0, Math.PI*2); ctx.fill();
+      // Nostrils
+      ctx.fillStyle = '#c09090';
+      ctx.beginPath(); ctx.arc(cx + cw + 21, cy + ch*0.22, 2, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx + cw + 27, cy + ch*0.22, 2, 0, Math.PI*2); ctx.fill();
+      // Eye
+      ctx.fillStyle = '#111';
+      ctx.beginPath(); ctx.arc(cx + cw + 14, cy + ch*0.12, 3.5, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(cx + cw + 13, cy + ch*0.11, 1.2, 0, Math.PI*2); ctx.fill();
+      // Ear
+      ctx.fillStyle = '#fefef8';
+      ctx.beginPath(); ctx.ellipse(cx + cw + 4, cy + ch*0.02, 7, 14, 0.5, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#1a1a1a';
+      ctx.beginPath(); ctx.ellipse(cx + cw + 4, cy + ch*0.02, 5, 10, 0.5, 0, Math.PI*2); ctx.fill();
+      // Horns
+      ctx.strokeStyle = '#ddd'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(cx + cw + 8, cy + ch*0.02); ctx.lineTo(cx + cw + 12, cy - ch*0.08); ctx.stroke();
+
+      // Front leg
+      ctx.fillStyle = '#fafaf5';
+      ctx.beginPath(); ctx.moveTo(cx + cw*0.72, cy + ch*0.7); ctx.lineTo(cx + cw*0.78, cy + ch*0.7);
+      ctx.lineTo(cx + cw*0.76, groundY); ctx.lineTo(cx + cw*0.7, groundY);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(cx + cw*0.7, groundY - 4, cw*0.07, 4);
+
+      // Back leg
+      ctx.fillStyle = '#fafaf5';
+      ctx.beginPath(); ctx.moveTo(cx + cw*0.18, cy + ch*0.7); ctx.lineTo(cx + cw*0.26, cy + ch*0.7);
+      ctx.lineTo(cx + cw*0.24, groundY); ctx.lineTo(cx + cw*0.16, groundY);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(cx + cw*0.16, groundY - 4, cw*0.07, 4);
+
+      // Udder
+      ctx.fillStyle = '#f5d0d8';
+      ctx.beginPath(); ctx.ellipse(cx + cw*0.48, cy + ch*0.72, ch*0.2, ch*0.15, 0, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#e8b8c0';
+      ctx.beginPath(); ctx.ellipse(cx + cw*0.48, cy + ch*0.7, ch*0.13, ch*0.09, 0, 0, Math.PI*2); ctx.fill();
+
+      // Tail
+      ctx.strokeStyle = '#fefef8'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(cx + 2, cy + ch*0.35);
+      ctx.quadraticCurveTo(cx - 10, cy + ch*0.2, cx - 8, cy + ch*0.55);
+      ctx.stroke();
+      ctx.fillStyle = '#1a1a1a';
+      ctx.beginPath(); ctx.ellipse(cx - 8, cy + ch*0.55, 3, 6, 0, 0, Math.PI*2); ctx.fill();
+
+      // Feed progress
+      for (var j = 0; j < cow.need; j++) {
+        ctx.fillStyle = j < cow.feed ? '#4ade80' : 'rgba(255,255,255,0.3)';
+        ctx.fillRect(cx + j*12 + cw*0.15, cy - 10, 8, 5);
+      }
+      // Ready heart
+      if (cow.feed >= cow.need) {
+        ctx.fillStyle = '#ff4444';
+        ctx.font = 'bold 16px "Segoe UI",system-ui,sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('v', cx + cw/2, cy - 14);
+      }
+      if (cow.happy > 0) {
+        ctx.fillStyle = 'rgba(255,255,0,'+cow.happy+')';
+        ctx.font = 'bold 12px "Segoe UI",system-ui,sans-serif';
+        ctx.fillText('^', cx + cw/2, cy - 4);
+      }
+    }
+
+    drawHUD('Drag wheat to feed cows! (' + sd.fedCount + '/' + sd.cowTarget + ')');
+  }
+
+  function drawStage1() {
+    var groundY = H * 0.78;
+    // Nature background
+    var grad = ctx.createLinearGradient(0, 0, 0, groundY);
+    grad.addColorStop(0, '#7ec8e3'); grad.addColorStop(0.6, '#a8d8a0'); grad.addColorStop(1, '#7cb342');
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, W, groundY);
+    ctx.fillStyle = '#558b2f'; ctx.fillRect(0, groundY, W, H - groundY);
+    ctx.fillStyle = '#8B7355';
+    ctx.fillRect(0, groundY - 4, W, 14);
+    // Fence
+    ctx.strokeStyle = '#6d4c00'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, groundY - 14); ctx.lineTo(W, groundY - 14); ctx.stroke();
+    for (var fx = 30; fx < W; fx += 90) {
+      ctx.fillStyle = '#8B6914'; ctx.fillRect(fx, groundY - 24, 5, 12);
+    }
+    // Sun + clouds
+    var sunX = W * 0.8, sunY = H * 0.12;
+    var sg = ctx.createRadialGradient(sunX, sunY, 8, sunX, sunY, 80);
+    sg.addColorStop(0, 'rgba(255,250,220,0.7)'); sg.addColorStop(1, 'rgba(255,200,100,0)');
+    ctx.fillStyle = sg; ctx.fillRect(sunX - 90, sunY - 90, 180, 180);
+    ctx.fillStyle = '#fff8dc';
+    ctx.beginPath(); ctx.arc(sunX, sunY, 18, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    for (var ci = 0; ci < 4; ci++) {
+      var clx = (ci * 280 + Date.now()/40) % (W + 200) - 100;
+      ctx.beginPath(); ctx.arc(clx, H*0.1 + ci*20, 24, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(clx+28, H*0.08 + ci*20, 20, 0, Math.PI*2); ctx.fill();
+    }
+
+    // Draw each cow
+    for (var ci = 0; ci < sd.milkCows.length; ci++) {
+      var cow = sd.milkCows[ci];
+      var cw = cow.w, ch = cow.h;
+      var ccx = cow.x, ccy = cow.y + Math.sin(cow.bob + Date.now()/1000) * 2;
+      cow.bob += 0.03;
+
+      // Shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.12)';
+      ctx.beginPath(); ctx.ellipse(ccx + cw/2, groundY - 2, cw*0.42, 4, 0, 0, Math.PI*2); ctx.fill();
+
+      // Body
+      ctx.fillStyle = '#fefef8';
+      ctx.beginPath(); ctx.ellipse(ccx + cw/2, ccy + ch*0.4, cw*0.48, ch*0.38, 0, 0, Math.PI*2); ctx.fill();
+      // Spots
+      ctx.fillStyle = '#1a1a1a';
+      ctx.beginPath(); ctx.ellipse(ccx + cw*0.3, ccy + ch*0.3, cw*0.14, ch*0.16, 0, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(ccx + cw*0.65, ccy + ch*0.35, cw*0.16, ch*0.14, -0.2, 0, Math.PI*2); ctx.fill();
+
+      // Head
+      ctx.fillStyle = '#fefef8';
+      ctx.beginPath(); ctx.ellipse(ccx + cw + 6, ccy + ch*0.15, ch*0.28, ch*0.2, 0.1, 0, Math.PI*2); ctx.fill();
+      // Muzzle
+      ctx.fillStyle = '#f0d5d0';
+      ctx.beginPath(); ctx.ellipse(ccx + cw + 14, ccy + ch*0.2, ch*0.12, ch*0.09, 0, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#c09090';
+      ctx.beginPath(); ctx.arc(ccx + cw + 12, ccy + ch*0.18, 1.5, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ccx + cw + 16, ccy + ch*0.18, 1.5, 0, Math.PI*2); ctx.fill();
+      // Eye
+      ctx.fillStyle = '#111';
+      ctx.beginPath(); ctx.arc(ccx + cw + 8, ccy + ch*0.1, 2.5, 0, Math.PI*2); ctx.fill();
+
+      // Legs
+      ctx.fillStyle = '#fafaf5';
+      ctx.fillRect(ccx + cw*0.18, ccy + ch*0.65, 8, groundY - (ccy + ch*0.65));
+      ctx.fillRect(ccx + cw*0.68, ccy + ch*0.65, 8, groundY - (ccy + ch*0.65));
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(ccx + cw*0.18, groundY - 3, 8, 3);
+      ctx.fillRect(ccx + cw*0.68, groundY - 3, 8, 3);
+
+      // Udder
+      ctx.fillStyle = '#f5d0d8';
+      ctx.beginPath(); ctx.ellipse(cow.udderCX, cow.udderCY, 14, 9, 0, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#e8b8c0';
+      ctx.beginPath(); ctx.ellipse(cow.udderCX, cow.udderCY - 2, 9, 6, 0, 0, Math.PI*2); ctx.fill();
+      // Teats
+      for (var ti = -6; ti <= 6; ti += 6) {
+        ctx.fillStyle = '#f8d8e0';
+        ctx.beginPath(); ctx.ellipse(cow.udderCX + ti, cow.udderCY + 10, 4, 6, 0, 0, Math.PI*2); ctx.fill();
+      }
+      // Glow if not done
+      if (!cow.done) {
+        var pulse = 0.3 + Math.sin(Date.now()/400) * 0.15;
+        ctx.strokeStyle = 'rgba(255,255,255,' + pulse + ')';
+        ctx.lineWidth = 2; ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.arc(cow.udderCX, cow.udderCY, 28, 0, Math.PI*2); ctx.stroke();
+        ctx.setLineDash([]);
+        if (Math.sin(Date.now()/500) > 0) {
+          ctx.fillStyle = 'rgba(255,255,255,0.6)';
+          ctx.font = 'bold 14px "Segoe UI",system-ui,sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('+', cow.udderCX, cow.udderCY - 14);
+        }
+      }
+
+      // Bucket on grass
+      var bbx = cow.bucketX - 22, bby = cow.bucketY, bbw = 44, bbh = 28;
+      ctx.fillStyle = '#aaa';
+      ctx.beginPath(); ctx.moveTo(bbx, bby); ctx.lineTo(bbx + bbw, bby);
+      ctx.lineTo(bbx + bbw - 4, bby + bbh); ctx.lineTo(bbx + 4, bby + bbh);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#777'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(bbx, bby); ctx.lineTo(bbx + bbw, bby);
+      ctx.lineTo(bbx + bbw - 4, bby + bbh); ctx.lineTo(bbx + 4, bby + bbh);
+      ctx.closePath(); ctx.stroke();
+      // Handle
+      ctx.strokeStyle = '#ccc'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(cow.bucketX, bby - 3, bbw*0.3, Math.PI, 0); ctx.stroke();
+      // Milk fill
+      var fillPct = cow.milkAmount / sd.milkTarget;
+      if (fillPct > 0) {
+        ctx.fillStyle = 'rgba(255,255,250,0.85)';
+        ctx.fillRect(bbx + 3, bby + bbh - 4 - (bbh-10)*fillPct, bbw - 6, (bbh-10)*fillPct);
+      }
+      // Done checkmark
+      if (cow.done) {
+        ctx.fillStyle = '#22c55e';
+        ctx.font = 'bold 16px "Segoe UI",system-ui,sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('OK', cow.bucketX, bby + bbh/2 + 5);
+      }
+    }
+
+    // Milk streams
+    for (var si = sd.milkStreams.length - 1; si >= 0; si--) {
+      var ms = sd.milkStreams[si];
+      ms.life -= 0.02;
+      if (ms.life <= 0) { sd.milkStreams.splice(si, 1); continue; }
+      ctx.strokeStyle = 'rgba(255,255,250,' + (ms.life*2) + ')';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(ms.x, ms.y + 6);
+      ctx.lineTo(ms.bucketX, ms.bucketY + 2);
+      ctx.stroke();
+    }
+
+    // When all done, show facility
+    if (sd.allDone) {
+      drawMilkFacility();
+      drawDraggableBucket2();
+    }
+
+    // Instructions
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold ' + Math.min(17, W*0.024) + 'px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    var doneCount = 0;
+    for (var ci = 0; ci < sd.milkCows.length; ci++) { if (sd.milkCows[ci].done) doneCount++; }
+    if (sd.allDone) {
+      ctx.fillText('All cows milked! DRAG bucket to facility -->', W/2, H*0.12);
+    } else {
+      ctx.fillText('Click each cow to milk! Done: ' + doneCount + '/3', W/2, H*0.12);
+    }
+
+    drawHUD(sd.allDone ? 'DRAG bucket to facility!' : 'Click cow udders to milk! ' + doneCount + '/3 done');
+  }
+
+  function drawDraggableBucket2() {
+    var ddx = sd.bucketDragX - 22, ddy = sd.bucketDragY;
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath(); ctx.ellipse(sd.bucketDragX, ddy + 20, 22, 4, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#aaa';
+    ctx.beginPath(); ctx.moveTo(ddx, ddy); ctx.lineTo(ddx + 44, ddy);
+    ctx.lineTo(ddx + 40, ddy + 28); ctx.lineTo(ddx + 4, ddy + 28);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = G; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(ddx, ddy); ctx.lineTo(ddx + 44, ddy);
+    ctx.lineTo(ddx + 40, ddy + 28); ctx.lineTo(ddx + 4, ddy + 28);
+    ctx.closePath(); ctx.stroke();
+    ctx.strokeStyle = '#ccc'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(sd.bucketDragX, ddy - 3, 14, Math.PI, 0); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,250,0.9)';
+    ctx.fillRect(ddx + 3, ddy + 4, 38, 20);
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 10px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('100%', sd.bucketDragX, ddy + 18);
+    if (!sd.bucketDragging && Math.sin(Date.now()/500) > 0) {
+      ctx.fillStyle = G;
+      ctx.font = 'bold 11px "Segoe UI",system-ui,sans-serif';
+      ctx.fillText('DRAG ME', sd.bucketDragX, ddy - 8);
+    }
+  }
+
+  function drawMilkFacility() {
+    var fx = sd.facilityX, fy = sd.facilityY;
+    // Building
+    ctx.fillStyle = '#7eb8da';
+    ctx.fillRect(fx - 40, fy - 50, 80, 90);
+    ctx.fillStyle = '#5a9ab5';
+    ctx.fillRect(fx - 36, fy - 46, 72, 86);
+    // Roof
+    ctx.fillStyle = '#4a7a95';
+    ctx.beginPath(); ctx.moveTo(fx - 48, fy - 50); ctx.lineTo(fx, fy - 70); ctx.lineTo(fx + 48, fy - 50); ctx.closePath(); ctx.fill();
+    // Door
+    ctx.fillStyle = '#3a5a6a';
+    ctx.fillRect(fx - 12, fy + 10, 24, 30);
+    // Sign
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('MILK', fx, fy - 20);
+    ctx.fillText('FACILITY', fx, fy - 8);
+    // Glow when dragging
+    if (sd.bucketDragging) {
+      var ga = 0.3 + Math.sin(Date.now()/300) * 0.15;
+      ctx.strokeStyle = 'rgba(242,194,0,' + ga + ')';
+      ctx.lineWidth = 3; ctx.setLineDash([5, 4]);
+      ctx.strokeRect(fx - 44, fy - 54, 88, 98);
+      ctx.setLineDash([]);
+    }
+  }
+
+  function drawDraggableBucket(bx, by, bw, bh) {
+    var ddx = sd.bucketDragX - bw/2, ddy = sd.bucketDragY - bh/2;
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath(); ctx.ellipse(sd.bucketDragX, sd.bucketDragY + bh/2 + 2, bw*0.5, 5, 0, 0, Math.PI*2); ctx.fill();
+    // Bucket
+    ctx.fillStyle = '#aaa';
+    ctx.beginPath(); ctx.moveTo(ddx, ddy); ctx.lineTo(ddx + bw, ddy);
+    ctx.lineTo(ddx + bw - 6, ddy + bh); ctx.lineTo(ddx + 6, ddy + bh);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = G; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(ddx, ddy); ctx.lineTo(ddx + bw, ddy);
+    ctx.lineTo(ddx + bw - 6, ddy + bh); ctx.lineTo(ddx + 6, ddy + bh);
+    ctx.closePath(); ctx.stroke();
+    // Handle
+    ctx.strokeStyle = '#ccc'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(sd.bucketDragX, ddy - 4, bw*0.32, Math.PI, 0); ctx.stroke();
+    // Full milk
+    ctx.fillStyle = 'rgba(255,255,250,0.95)';
+    ctx.fillRect(ddx + 5, ddy + 6, bw - 10, bh - 12);
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 11px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('100%', sd.bucketDragX, ddy + bh/2 + 4);
+    // Grab hint
+    if (!sd.bucketDragging && Math.sin(Date.now()/500) > 0) {
+      ctx.fillStyle = G;
+      ctx.font = 'bold 13px "Segoe UI",system-ui,sans-serif';
+      ctx.fillText('DRAG ME', sd.bucketDragX, ddy - 12);
+    }
+  }
+
+  function drawStage2() {
+    var groundY = H * 0.78;
+    // Cold room background
+    var grad = ctx.createLinearGradient(0, 0, 0, groundY);
+    grad.addColorStop(0, '#1a2a4a'); grad.addColorStop(0.5, '#1e3a5f'); grad.addColorStop(1, '#263d6b');
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, W, groundY);
+    ctx.fillStyle = '#1a2a3a'; ctx.fillRect(0, groundY, W, H - groundY);
+
+    // Frost at edges
+    for (var fi = 0; fi < 8; fi++) {
+      ctx.fillStyle = 'rgba(180,220,255,' + (0.06 + Math.sin(Date.now()/2000 + fi)*0.03) + ')';
+      ctx.fillRect(0, fi * H/8, 12, H/8 + 4);
+      ctx.fillRect(W - 12, fi * H/8, 12, H/8 + 4);
+    }
+
+    // Snowflakes drifting
+    for (var si = 0; si < 30; si++) {
+      var sfX = (si * 137 + Date.now()*0.02) % W;
+      var sfY = (si * 89 + Date.now()*0.03) % H;
+      ctx.fillStyle = 'rgba(255,255,255,' + (0.2 + 0.3*Math.sin(si+Date.now()/1000)) + ')';
+      ctx.beginPath(); ctx.arc(sfX, sfY, 1.5, 0, Math.PI*2); ctx.fill();
+    }
+
+    // ─── Milk tank (right side) ───
+    var tx = W * 0.82, ty = H * 0.15, tw = 90, th = 260;
+    // Tank body
+    ctx.fillStyle = '#2a3a5a';
+    rrect(tx, ty, tw, th, 12); ctx.fill();
+    ctx.strokeStyle = '#4a6a9a'; ctx.lineWidth = 2;
+    rrect(tx, ty, tw, th, 12); ctx.stroke();
+    // Tank label
+    ctx.fillStyle = '#6a8aba';
+    ctx.font = 'bold 10px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('MILK', tx + tw/2, ty + 18);
+    // Milk fill
+    var milkH = th * 0.65;
+    ctx.fillStyle = 'rgba(255,255,250,0.8)';
+    ctx.fillRect(tx + 4, ty + th - 8 - milkH, tw - 8, milkH);
+    // Steam when hot
+    if (sd.temp > 5) {
+      var steamA = (sd.temp - 5) * 0.15;
+      ctx.strokeStyle = 'rgba(255,200,200,' + steamA + ')';
+      ctx.lineWidth = 2; ctx.setLineDash([4, 6]);
+      for (var st = 0; st < 3; st++) {
+        ctx.beginPath();
+        ctx.moveTo(tx + 15 + st*30, ty + th - milkH - 10);
+        ctx.quadraticCurveTo(tx + 30, ty + th - milkH - 25 - Math.sin(Date.now()/400+st)*8, tx + 15 + st*30 + 10, ty + th - milkH - 35);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
+
+    // Temp gauge bar
+    var gx = tx + tw + 14, gy = ty, gw = 14, gh = th;
+    ctx.fillStyle = '#1a2a3a'; rrect(gx, gy, gw, gh, 7); ctx.fill();
+    // Safe zone (green)
+    ctx.fillStyle = 'rgba(34,197,94,0.3)';
+    ctx.fillRect(gx+2, gy+gh*0.3, gw-4, gh*0.35);
+    // Temp indicator
+    var tY = gy + gh - (sd.temp/10)*gh;
+    var tColor = sd.temp > 6 || sd.temp < 2 ? '#ef4444' : sd.temp > 5 || sd.temp < 3 ? '#f59e0b' : '#22c55e';
+    ctx.fillStyle = tColor;
+    ctx.fillRect(gx - 4, tY - 2, gw + 8, 5);
+
+    // Temp label
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(sd.temp.toFixed(1) + 'C', gx + gw + 6, tY + 4);
+    ctx.fillStyle = '#aaa';
+    ctx.font = '10px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('4C', gx - 6, gy + gh*0.475 + 4);
+
+    // ─── Timer bar ───
+    var timePct = sd.tempTime / sd.tempTarget;
+    var tbx = W * 0.1, tby = H * 0.05, tbw = W * 0.65, tbh = 8;
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    rrect(tbx, tby, tbw, tbh, 4); ctx.fill();
+    ctx.fillStyle = '#38bdf8';
+    rrect(tbx, tby, tbw * timePct, tbh, 4); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('COOLING: ' + (sd.tempTarget - sd.tempTime).toFixed(1) + 's', tbx, tby + 20);
+
+    // ─── Falling ice/heat blocks ───
+    for (var i = 0; i < sd.iceBlocks.length; i++) {
+      var b = sd.iceBlocks[i];
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(b.rot);
+
+      if (b.type === 'ice') {
+        // Ice crystal
+        var sz = b.r;
+        ctx.fillStyle = 'rgba(180,230,255,0.85)';
+        ctx.beginPath();
+        for (var pt = 0; pt < 6; pt++) {
+          var ang = pt * Math.PI/3 - Math.PI/2;
+          var rx = Math.cos(ang) * sz, ry = Math.sin(ang) * sz;
+          if (pt === 0) ctx.moveTo(rx, ry); else ctx.lineTo(rx, ry);
+          var mx = Math.cos(ang + Math.PI/6) * sz * 0.5;
+          var my = Math.sin(ang + Math.PI/6) * sz * 0.5;
+          ctx.lineTo(mx, my);
+        }
+        ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = 'rgba(200,240,255,0.8)'; ctx.lineWidth = 1.5; ctx.stroke();
+        // Sparkle
+        var sparkA = 0.5 + Math.sin(b.sparkle) * 0.3;
+        ctx.fillStyle = 'rgba(255,255,255,' + sparkA + ')';
+        ctx.beginPath(); ctx.arc(0, -sz*0.1, sz*0.18, 0, Math.PI*2); ctx.fill();
+      } else {
+        // Heat block
+        var sz = b.r;
+        ctx.fillStyle = 'rgba(255,100,50,0.8)';
+        ctx.beginPath(); ctx.arc(0, 0, sz*0.7, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,150,50,0.6)';
+        ctx.beginPath(); ctx.arc(0, 0, sz*0.9, 0, Math.PI*2); ctx.fill();
+        // Flame tips
+        ctx.fillStyle = 'rgba(255,200,50,0.5)';
+        for (var fl = 0; fl < 4; fl++) {
+          var fa = fl * Math.PI/2 + b.rot;
+          ctx.beginPath(); ctx.arc(Math.cos(fa)*sz*0.5, Math.sin(fa)*sz*0.5, sz*0.3, 0, Math.PI*2); ctx.fill();
+        }
+        // Warning glow
+        var warmA = 0.3 + Math.sin(b.sparkle*2) * 0.2;
+        ctx.strokeStyle = 'rgba(255,80,30,' + warmA + ')';
+        ctx.lineWidth = 2; ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.arc(0, 0, sz*1.1, 0, Math.PI*2); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.restore();
+    }
+
+    // ─── Player bucket ───
+    var bx = sd.bucketX, by = groundY - 10;
+    // Bucket body
+    ctx.fillStyle = '#8899aa';
+    ctx.beginPath(); ctx.moveTo(bx-28, by-14); ctx.lineTo(bx+28, by-14);
+    ctx.lineTo(bx+20, by+14); ctx.lineTo(bx-20, by+14);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#aabbcc'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(bx-28, by-14); ctx.lineTo(bx+28, by-14);
+    ctx.lineTo(bx+20, by+14); ctx.lineTo(bx-20, by+14);
+    ctx.closePath(); ctx.stroke();
+    // Handle
+    ctx.strokeStyle = '#99aabb'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(bx, by-18, 16, Math.PI, 0); ctx.stroke();
+    // Catch zone glow
+    ctx.strokeStyle = 'rgba(56,189,248,0.3)';
+    ctx.lineWidth = 2; ctx.setLineDash([3, 5]);
+    ctx.beginPath(); ctx.arc(bx, by, 40, 0, Math.PI*2); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // ─── Splash particles ───
+    for (var i = 0; i < sd.iceParticles.length; i++) {
+      var p = sd.iceParticles[i];
+      var alpha = p.life * 2;
+      ctx.fillStyle = p.color.replace(')', ',' + alpha + ')').replace('rgb', 'rgba');
+      if (p.color.startsWith('#')) {
+        ctx.fillStyle = 'rgba(168,230,255,' + alpha + ')';
+      }
+      ctx.beginPath(); ctx.arc(p.x, p.y, 3 * p.life, 0, Math.PI*2); ctx.fill();
+    }
+
+    drawHUD('Move mouse to catch ICE blocks! Avoid red HEAT blocks!');
+  }
+
+  function drawStage3() {
+    // Industrial pasteurization room
+    var grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#1a1008'); grad.addColorStop(0.5, '#2a1a0e'); grad.addColorStop(1, '#150a04');
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+
+    // ─── Header panel ───
+    var hdrY = 8, hdrH = 52;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    rrect(10, hdrY, W - 20, hdrH, 10); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold ' + Math.min(16, W*0.022) + 'px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('PASTEURIZATION: Click inside the tank to ZAP bacteria with heat!', W/2, hdrY + 22);
+    ctx.fillStyle = '#f97316';
+    ctx.font = 'bold ' + Math.min(13, W*0.018) + 'px "Segoe UI",system-ui,sans-serif';
+    ctx.fillText('Target temperature: 72C  |  Each click heats the milk', W/2, hdrY + 40);
+
+    // ─── Temperature display (big, left side) ───
+    var tempX = W * 0.04, tempY = H * 0.2;
+    // Background card
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    rrect(tempX, tempY, W * 0.12, H * 0.22, 12); ctx.fill();
+    // Temp label
+    ctx.fillStyle = '#999';
+    ctx.font = 'bold 12px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('TEMP', tempX + W*0.06, tempY + 20);
+    // Big temp number
+    var tCol = sd.pasteurTemp > 80 || sd.pasteurTemp < 60 ? '#ef4444' :
+               sd.pasteurTemp > 68 && sd.pasteurTemp < 78 ? '#22c55e' : '#f59e0b';
+    ctx.fillStyle = tCol;
+    ctx.font = 'bold ' + Math.min(48, W*0.06) + 'px "Segoe UI",system-ui,sans-serif';
+    ctx.fillText(sd.pasteurTemp.toFixed(0) + 'C', tempX + W*0.06, tempY + 62);
+    // Target
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 11px "Segoe UI",system-ui,sans-serif';
+    ctx.fillText('Target: 72C', tempX + W*0.06, tempY + 82);
+    // Status badge
+    var statusText = sd.pasteurTemp > 80 ? 'TOO HOT!' : sd.pasteurTemp < 60 ? 'TOO COLD!' :
+                     sd.pasteurTemp > 68 && sd.pasteurTemp < 78 ? 'PERFECT' : 'ADJUST';
+    var statusCol = statusText === 'PERFECT' ? '#22c55e' : statusText === 'ADJUST' ? '#f59e0b' : '#ef4444';
+    ctx.fillStyle = statusCol;
+    ctx.font = 'bold 13px "Segoe UI",system-ui,sans-serif';
+    ctx.fillText(statusText, tempX + W*0.06, tempY + 104);
+
+    // ─── Milk tank ───
+    var tcx = sd.tankCX, tcy = sd.tankCY, tr = sd.tankR;
+    // Outer steel ring
+    ctx.fillStyle = '#3a3a3a';
+    ctx.beginPath(); ctx.arc(tcx, tcy, tr + 10, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#555'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(tcx, tcy, tr + 10, 0, Math.PI*2); ctx.stroke();
+    // Inner rim
+    ctx.strokeStyle = '#777'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(tcx, tcy, tr, 0, Math.PI*2); ctx.stroke();
+    // Milk fill
+    var milkAlpha = 0.65 + (sd.pasteurTemp / 100) * 0.35;
+    ctx.fillStyle = 'rgba(255,255,252,' + milkAlpha + ')';
+    ctx.beginPath(); ctx.arc(tcx, tcy, tr - 2, 0, Math.PI*2); ctx.fill();
+    // Tank label
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.font = 'bold 14px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('MILK', tcx, tcy + 6);
+
+    // ─── Heat rings ───
+    for (var i = 0; i < sd.heatRings.length; i++) {
+      var hr = sd.heatRings[i];
+      var alpha = hr.life / 0.6;
+      ctx.strokeStyle = 'rgba(249,115,22,' + (alpha*0.7) + ')';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(hr.x, hr.y, hr.r, 0, Math.PI*2); ctx.stroke();
+      // Inner glow
+      ctx.strokeStyle = 'rgba(255,200,100,' + (alpha*0.3) + ')';
+      ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.arc(hr.x, hr.y, hr.r * 0.7, 0, Math.PI*2); ctx.stroke();
+    }
+
+    // ─── Bacteria ───
+    for (var i = 0; i < sd.bacteria.length; i++) {
+      var b = sd.bacteria[i];
+      if (!b.alive) continue;
+      // Glow
+      ctx.fillStyle = 'rgba(255,0,0,0.15)';
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 1.3, 0, Math.PI*2); ctx.fill();
+      // Body
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#ff6666';
+      ctx.beginPath(); ctx.arc(b.x - b.r*0.2, b.y - b.r*0.25, b.r*0.35, 0, Math.PI*2); ctx.fill();
+      // Spikes
+      ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 2;
+      for (var j = 0; j < 6; j++) {
+        var ang = j * Math.PI/3 + Date.now()/1000;
+        ctx.beginPath();
+        ctx.moveTo(b.x + Math.cos(ang)*b.r*0.55, b.y + Math.sin(ang)*b.r*0.55);
+        ctx.lineTo(b.x + Math.cos(ang)*b.r*1.1, b.y + Math.sin(ang)*b.r*1.1);
+        ctx.stroke();
+      }
+      b.x += (Math.random() - 0.5) * 0.4;
+      b.y += (Math.random() - 0.5) * 0.4;
+    }
+
+    // ─── Progress bar (bottom) ───
+    var tp = sd.pasteurTime / sd.pasteurTarget;
+    var pbx = W * 0.1, pby = H * 0.88, pbw = W * 0.8, pbh = 10;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    rrect(pbx - 4, pby - 4, pbw + 8, pbh + 16, 8); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    rrect(pbx, pby, pbw, pbh, 5); ctx.fill();
+    ctx.fillStyle = tp > 0.7 ? '#22c55e' : '#f97316';
+    rrect(pbx, pby, pbw * tp, pbh, 5); ctx.fill();
+    // Progress label
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 13px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('PASTEURIZATION: ' + Math.floor(tp*100) + '% complete', W/2, pby + pbh + 18);
+
+    // ─── Instructions ───
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.font = 'bold ' + Math.min(14, W*0.02) + 'px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('CLICK INSIDE THE TANK to kill bacteria  |  Keep temperature at 72C', W/2, H*0.96);
+
+    drawHUD('CLICK tank to ZAP bacteria! Keep at 72C | Score: ' + stageScores[stage]);
+  }
+
+  function drawStage4() {
+    // Packing room
+    var grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#e8e0d8'); grad.addColorStop(0.5, '#d8d0c8'); grad.addColorStop(1, '#c8c0b8');
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+    // Floor line
+    ctx.fillStyle = '#bbb'; ctx.fillRect(0, H*0.72, W, 4);
+
+    // ─── Counter (left) ───
+    var ctrX = sd.counterX - 40, ctrY = sd.counterY, ctrW = 420, ctrH = 16;
+    ctx.fillStyle = '#8B7355';
+    ctx.fillRect(ctrX, ctrY, ctrW, ctrH);
+    ctx.fillStyle = '#a08060';
+    ctx.fillRect(ctrX, ctrY, ctrW, 4);
+    // Counter legs
+    ctx.fillStyle = '#6B5335';
+    ctx.fillRect(ctrX + 30, ctrY + ctrH, 10, H*0.72 - ctrY - ctrH);
+    ctx.fillRect(ctrX + ctrW - 40, ctrY + ctrH, 10, H*0.72 - ctrY - ctrH);
+    // Shelf label
+    ctx.fillStyle = '#555';
+    ctx.font = 'bold 12px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('Fresh Milk Bottles', ctrX + 10, ctrY - 8);
+
+    // ─── Milk bottles on counter ───
+    for (var i = 0; i < sd.packBottles.length; i++) {
+      var b = sd.packBottles[i];
+      if (b.packed) continue;
+      var bx = b.x, by = b.y;
+      // Bottle body
+      ctx.fillStyle = 'rgba(255,255,252,0.9)';
+      ctx.fillRect(bx - 12, by - 36, 24, 38);
+      ctx.strokeStyle = '#ccc'; ctx.lineWidth = 1.5;
+      ctx.strokeRect(bx - 12, by - 36, 24, 38);
+      // Neck
+      ctx.fillStyle = 'rgba(255,255,252,0.85)';
+      ctx.fillRect(bx - 5, by - 46, 10, 12);
+      ctx.strokeRect(bx - 5, by - 46, 10, 12);
+      // Cap
+      ctx.fillStyle = N;
+      ctx.fillRect(bx - 6, by - 50, 12, 6);
+      // Milk fill
+      ctx.fillStyle = 'rgba(255,255,250,0.6)';
+      ctx.fillRect(bx - 9, by - 10, 18, 12);
+      // Grab highlight
+      if (b.grabbed) {
+        ctx.strokeStyle = G; ctx.lineWidth = 2;
+        ctx.setLineDash([3, 3]);
+        ctx.strokeRect(bx - 14, by - 52, 28, 54);
+        ctx.setLineDash([]);
+      }
+    }
+
+    // ─── Crate (right) ───
+    var crX = sd.crateCX - 75, crY = sd.crateCY - 35, crW = 150, crH = 80;
+    // Crate body
+    ctx.fillStyle = '#c49a3c';
+    ctx.fillRect(crX, crY, crW, crH);
+    ctx.strokeStyle = '#8B6914'; ctx.lineWidth = 3;
+    ctx.strokeRect(crX, crY, crW, crH);
+    // Slats
+    ctx.strokeStyle = '#a07820'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(crX, crY + crH*0.33); ctx.lineTo(crX + crW, crY + crH*0.33); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(crX, crY + crH*0.66); ctx.lineTo(crX + crW, crY + crH*0.66); ctx.stroke();
+    // Crate label
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 10px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('VITA DAIRY', crX + crW/2, crY - 8);
+    // Target glow when holding bottle
+    if (sd.grabbedIdx >= 0) {
+      var glowA = 0.3 + Math.sin(Date.now()/300) * 0.15;
+      ctx.strokeStyle = 'rgba(242,194,0,' + glowA + ')';
+      ctx.lineWidth = 3; ctx.setLineDash([5, 4]);
+      ctx.strokeRect(crX - 4, crY - 4, crW + 8, crH + 8);
+      ctx.setLineDash([]);
+    }
+
+    // ─── Packed bottles in crate ───
+    for (var i = 0; i < sd.packBottles.length; i++) {
+      var b = sd.packBottles[i];
+      if (!b.packed) continue;
+      var bx = b.x, by = b.y;
+      ctx.fillStyle = 'rgba(255,255,252,0.9)';
+      ctx.fillRect(bx - 8, by - 24, 16, 26);
+      ctx.strokeStyle = '#ccc'; ctx.lineWidth = 1;
+      ctx.strokeRect(bx - 8, by - 24, 16, 26);
+      ctx.fillStyle = N;
+      ctx.fillRect(bx - 4, by - 30, 8, 4);
+      ctx.fillStyle = 'rgba(255,255,250,0.5)';
+      ctx.fillRect(bx - 5, by - 4, 10, 6);
+    }
+
+    // ─── Counter ───
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold ' + Math.min(22, W*0.03) + 'px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Packed: ' + sd.packedCount + ' / ' + sd.packTarget, W/2, H*0.82);
+
+    // Instructions
+    ctx.fillStyle = '#333';
+    ctx.font = 'bold ' + Math.min(15, W*0.022) + 'px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    var instr = sd.grabbedIdx >= 0 ? 'Now click the CRATE to drop it in!' : 'Click a bottle to grab it!';
+    ctx.fillText(instr, W/2, H*0.12);
+
+    drawHUD('Click bottles then click crate to pack! ' + sd.packedCount + '/' + sd.packTarget);
+  }
+
+  function drawHUD(text) {
+    // Stage indicator
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    rrect(8, 8, 180, 24, 12); ctx.fill();
+    ctx.fillStyle = STAGES[stage].color;
+    ctx.font = 'bold 11px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('STAGE ' + (stage+1) + ': ' + STAGES[stage].name, 16, 25);
+
+    // Score
+    if (stageScores[stage] > 0) {
+      ctx.fillStyle = G;
+      ctx.font = 'bold 12px "Segoe UI",system-ui,sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(stageScores[stage] + ' pts', W - 12, 25);
+    }
+
+    // Help text at bottom
+    if (text) {
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      var tw = ctx.measureText(text).width + 40;
+      rrect(W/2 - tw/2, H - 34, tw, 24, 12); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = '11px "Segoe UI",system-ui,sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(text, W/2, H - 18);
+    }
+  }
+
+  function drawBasePlay() {
+    if (stage === 0) drawStage0();
+    else if (stage === 1) drawStage1();
+    else if (stage === 2) drawStage2();
+    else if (stage === 3) drawStage3();
+    else if (stage === 4) drawStage4();
+  }
+
+  // ─── Main Loop ───
+  var lastTime = null;
+  function loop(timestamp) {
+    if (lastTime === null) lastTime = timestamp;
+    var dt = Math.min(0.1, (timestamp - lastTime) / 1000);
+    lastTime = timestamp;
+
+    ctx.clearRect(0, 0, W, H);
+
+    if (gs === STATE.MENU) {
+      drawMenu();
+    } else if (gs === STATE.INTRO) {
+      drawStageIntro();
+      update(dt);
+    } else if (gs === STATE.PLAYING) {
+      update(dt);
+      drawBasePlay();
+    } else if (gs === STATE.STAGE_CLEAR) {
+      drawBasePlay();
+      drawStageClear();
+      if (clearTimer === 0) { clearTimer = 0.001; }
+      clearTimer += dt;
+    } else if (gs === STATE.FINAL) {
+      drawFinal();
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  requestAnimationFrame(loop);
 })();
 </script>
 </body>
