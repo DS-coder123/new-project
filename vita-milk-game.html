@@ -69,9 +69,9 @@
     { name:'Cool the Milk', icon:'C', color:'#38bdf8',
       desc:'Catch blue stars with your bucket! Each adds 100 points. Dodge yellow stars — they take 200! Reach 1000 points to pass!',
       fact:'Milk leaves the cow at 37C and must be cooled to 4C within 2 hours to stay fresh and safe.' },
-    { name:'Quality Control', icon:'B', color:'#a78bfa',
-      desc:'Inspect each bottle for defects! Click APPROVE for good bottles, REJECT for defective ones. +50 for correct, -100 for wrong. Reach 500 points!',
-      fact:'Every Vita bottle is inspected for fill level, cap seal, label accuracy, and cracks before leaving the facility.' },
+    { name:'Bottle & Deliver', icon:'B', color:'#a78bfa',
+      desc:'Grab milk bottles from the counter and pack them into the Vita crate! Click a bottle then click the crate to drop it in.',
+      fact:'After pasteurization, milk is bottled, sealed, and delivered to stores within 24 hours - farm fresh to your table!' },
   ];
 
   // ─── Stage-Specific Data ───
@@ -155,8 +155,8 @@
     }
     // Stage 5
     if (n === 4) {
-      sd.qcBottle = null; sd.qcResult = null; sd.qcFlash = 0; sd.qcFlashColor = '#22c55e';
-      sd.qcFact = ''; sd.qcFactTimer = 0; sd.qcTotalInspected = 0; sd.qcTarget = 999;
+      sd.counterX = W * 0.18; sd.counterY = H * 0.45;
+      sd.crateCX = W * 0.72; sd.crateCY = H * 0.50;
     }
   }
 
@@ -181,7 +181,7 @@
       var r = c.getBoundingClientRect();
       var cx = e.clientX - r.left, cy = e.clientY - r.top;
       if (stage === 2) handlePasteurClick(cx, cy);
-      if (stage === 4) handleQCClick(cx, cy);
+      if (stage === 4) handlePackClick(cx, cy);
     }
   });
   c.addEventListener('touchstart', function(e) { e.preventDefault(); touchActive = true;
@@ -194,7 +194,7 @@
     else if (gs === STATE.PLAYING && stage === 0) handleStage0Down(clickX, clickY);
     if (gs === STATE.PLAYING && stage === 1) tryMilk(clickX, clickY);
     if (gs === STATE.PLAYING && stage === 2) handlePasteurClick(clickX, clickY);
-    if (gs === STATE.PLAYING && stage === 4) handleQCClick(clickX, clickY);
+    if (gs === STATE.PLAYING && stage === 4) handlePackClick(clickX, clickY);
   });
   c.addEventListener('touchmove', function(e) { e.preventDefault();
     var t = e.touches[0];
@@ -503,104 +503,73 @@
     sd.pasteurTemp += 2;
   }
 
-  // Stage 4: Quality Control Lab — inspect bottles
+  // Stage 4: Pack & Deliver
   function updateStage4(dt) {
-    // Flash effect timer
-    if (sd.qcFlash > 0) sd.qcFlash -= dt;
-    if (sd.qcFactTimer > 0) sd.qcFactTimer -= dt;
-
-    // Spawn new bottle if none active
-    if (!sd.qcBottle && sd.qcTotalInspected < sd.qcTarget) {
-      spawnQCBottle();
+    // Bottle on counter is grabbed - follow cursor
+    if (sd.grabbedIdx >= 0) {
+      var gb = sd.packBottles[sd.grabbedIdx];
+      gb.x += (clickX - gb.x) * 0.25;
+      gb.y += (clickY - gb.y) * 0.25;
+    }
+    // Spawn new bottles on counter
+    sd.packSpawnTimer += dt;
+    var onCounter = 0;
+    for (var i = 0; i < sd.packBottles.length; i++) {
+      if (!sd.packBottles[i].packed) onCounter++;
+    }
+    if (onCounter < 4 && sd.packSpawnTimer > 0.5 && sd.packedCount + onCounter < sd.packTarget) {
+      sd.packSpawnTimer = 0;
+      var slot = 0;
+      var taken = [];
+      for (var i = 0; i < sd.packBottles.length; i++) {
+        if (!sd.packBottles[i].packed) taken.push(i);
+      }
+      for (var s = 0; s < 6; s++) {
+        var found = false;
+        for (var t = 0; t < taken.length; t++) {
+          if (sd.packBottles[taken[t]].slotIdx === s) { found = true; break; }
+        }
+        if (!found) { slot = s; break; }
+      }
+      sd.packBottles.push({
+        x: sd.counterX + slot * 70, y: sd.counterY - 30,
+        slotIdx: slot, packed: false, grabbed: false
+      });
     }
   }
 
-  function spawnQCBottle() {
-    sd.qcTotalInspected++;
-    // Random defects
-    var hasDefect = Math.random() < 0.45; // 45% chance of defective
-    var defectTypes = [];
-    if (hasDefect) {
-      var roll = Math.random();
-      if (roll < 0.35) defectTypes.push('underfilled');
-      else if (roll < 0.6) defectTypes.push('missing_cap');
-      else if (roll < 0.8) defectTypes.push('wrong_label');
-      else defectTypes.push('cracked');
-      // 20% chance of second defect
-      if (Math.random() < 0.2 && defectTypes.length < 2) {
-        var types = ['underfilled','missing_cap','wrong_label','cracked'];
-        var t2 = types[Math.floor(Math.random()*4)];
-        if (t2 !== defectTypes[0]) defectTypes.push(t2);
+  function handlePackClick(mx, my) {
+    // Check if clicking on the crate to drop
+    if (sd.grabbedIdx >= 0) {
+      var dx = mx - sd.crateCX, dy = my - sd.crateCY;
+      if (Math.abs(dx) < 70 && Math.abs(dy) < 50) {
+        // Drop into crate
+        var gb = sd.packBottles[sd.grabbedIdx];
+        gb.packed = true;
+        gb.grabbed = false;
+        gb.x = sd.crateCX - 40 + (sd.packedCount % 4) * 28;
+        gb.y = sd.crateCY - 15 + Math.floor(sd.packedCount / 4) * 30;
+        sd.packedCount++;
+        sd.grabbedIdx = -1;
+        stageScores[stage] += 8;
+        if (sd.packedCount >= sd.packTarget) {
+          stageScores[stage] = Math.max(10, stageScores[stage]);
+          finishStage();
+        }
+        return;
       }
     }
-    sd.qcBottle = {
-      defective: hasDefect,
-      defects: defectTypes,
-      fillLevel: hasDefect && defectTypes.indexOf('underfilled') >= 0 ? 0.25 + Math.random()*0.25 : 0.85 + Math.random()*0.15,
-      capSealed: !hasDefect || defectTypes.indexOf('missing_cap') < 0,
-      labelCorrect: !hasDefect || defectTypes.indexOf('wrong_label') < 0,
-      cracked: hasDefect && defectTypes.indexOf('cracked') >= 0,
-      scale: 0, targetScale: 1
-    };
-    sd.qcResult = null;
-  }
-
-  function handleQCApprove() {
-    if (!sd.qcBottle || sd.qcResult !== null) return;
-    var correct = !sd.qcBottle.defective;
-    if (correct) {
-      stageScores[stage] += 50;
-      sd.qcFlash = 0.3;
-      sd.qcFlashColor = '#22c55e';
-      sd.qcFact = 'Correct! This bottle meets all Vita quality standards.';
-    } else {
-      stageScores[stage] = Math.max(0, stageScores[stage] - 100);
-      sd.qcFlash = 0.3;
-      sd.qcFlashColor = '#ef4444';
-      var defectNames = sd.qcBottle.defects.map(function(d) {
-        return {underfilled:'underfilled', missing_cap:'missing cap', wrong_label:'wrong label', cracked:'cracked'}[d];
-      }).join(' & ');
-      sd.qcFact = 'Missed it! This bottle has: ' + defectNames + '. Always check before shipping!';
-    }
-    sd.qcResult = correct ? 'approved_ok' : 'approved_bad';
-    sd.qcFactTimer = 2.0;
-    setTimeout(function() { sd.qcBottle = null; sd.qcResult = null; }, 1200);
-    if (stageScores[stage] >= 500) { stageScores[stage] = 500; finishStage(); }
-  }
-
-  function handleQCReject() {
-    if (!sd.qcBottle || sd.qcResult !== null) return;
-    var correct = sd.qcBottle.defective;
-    if (correct) {
-      stageScores[stage] += 50;
-      sd.qcFlash = 0.3;
-      sd.qcFlashColor = '#22c55e';
-      var defectNames = sd.qcBottle.defects.map(function(d) {
-        return {underfilled:'underfilled', missing_cap:'missing cap', wrong_label:'wrong label', cracked:'cracked'}[d];
-      }).join(' & ');
-      sd.qcFact = 'Good catch! Defects found: ' + defectNames + '. Vita never ships imperfect products.';
-    } else {
-      stageScores[stage] = Math.max(0, stageScores[stage] - 100);
-      sd.qcFlash = 0.3;
-      sd.qcFlashColor = '#ef4444';
-      sd.qcFact = 'Oops! That bottle was perfectly fine. Wasted good milk!';
-    }
-    sd.qcResult = correct ? 'rejected_ok' : 'rejected_bad';
-    sd.qcFactTimer = 2.0;
-    setTimeout(function() { sd.qcBottle = null; sd.qcResult = null; }, 1200);
-    if (stageScores[stage] >= 500) { stageScores[stage] = 500; finishStage(); }
-  }
-
-  function handleQCClick(mx, my) {
-    // Approve button
-    var appX = W * 0.62, appY = H * 0.6, appW = W * 0.16, appH = 56;
-    if (mx > appX && mx < appX + appW && my > appY && my < appY + appH) {
-      handleQCApprove(); return;
-    }
-    // Reject button
-    var rejX = W * 0.22, rejY = H * 0.6, rejW = W * 0.16, rejH = 56;
-    if (mx > rejX && mx < rejX + rejW && my > rejY && my < rejY + rejH) {
-      handleQCReject(); return;
+    // Check if clicking a bottle on counter to grab
+    if (sd.grabbedIdx >= 0) return; // already holding
+    for (var i = sd.packBottles.length - 1; i >= 0; i--) {
+      var b = sd.packBottles[i];
+      if (b.packed) continue;
+      var dx = mx - b.x, dy = my - b.y;
+      if (Math.abs(dx) < 24 && Math.abs(dy) < 36) {
+        b.grabbed = true;
+        sd.grabbedIdx = i;
+        return;
+      }
     }
   }
 
@@ -671,7 +640,7 @@
       // Stage label
       ctx.fillStyle = '#333';
       ctx.font = 'bold 9px "Segoe UI",system-ui,sans-serif';
-      var sName = ['Feed','Milk','Pasteurize','Cool','QC'][i];
+      var sName = ['Feed','Milk','Pasteurize','Cool','Bottle'][i];
       ctx.fillText(sName, ix, iconY + 28);
     }
 
@@ -1731,200 +1700,112 @@
   }
 
   function drawStage4() {
-    // Lab background
-    var bg = ctx.createLinearGradient(0, 0, 0, H);
-    bg.addColorStop(0, '#fefefe'); bg.addColorStop(0.6, '#f8f7f4'); bg.addColorStop(1, '#f0eee8');
-    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    // Packing room
+    var grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#e8e0d8'); grad.addColorStop(0.5, '#d8d0c8'); grad.addColorStop(1, '#c8c0b8');
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+    // Floor line
+    ctx.fillStyle = '#bbb'; ctx.fillRect(0, H*0.72, W, 4);
 
-    // ─── Header ───
-    var hdrY = 6, hdrH = 40;
-    ctx.fillStyle = 'rgba(19,75,141,0.08)';
-    rrect(10, hdrY, W - 20, hdrH, 10); ctx.fill();
-    ctx.fillStyle = N;
+    // ─── Counter (left) ───
+    var ctrX = sd.counterX - 40, ctrY = sd.counterY, ctrW = 420, ctrH = 16;
+    ctx.fillStyle = '#8B7355';
+    ctx.fillRect(ctrX, ctrY, ctrW, ctrH);
+    ctx.fillStyle = '#a08060';
+    ctx.fillRect(ctrX, ctrY, ctrW, 4);
+    // Counter legs
+    ctx.fillStyle = '#6B5335';
+    ctx.fillRect(ctrX + 30, ctrY + ctrH, 10, H*0.72 - ctrY - ctrH);
+    ctx.fillRect(ctrX + ctrW - 40, ctrY + ctrH, 10, H*0.72 - ctrY - ctrH);
+    // Shelf label
+    ctx.fillStyle = '#555';
+    ctx.font = 'bold 12px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('Fresh Milk Bottles', ctrX + 10, ctrY - 8);
+
+    // ─── Milk bottles on counter ───
+    for (var i = 0; i < sd.packBottles.length; i++) {
+      var b = sd.packBottles[i];
+      if (b.packed) continue;
+      var bx = b.x, by = b.y;
+      // Bottle body
+      ctx.fillStyle = 'rgba(255,255,252,0.9)';
+      ctx.fillRect(bx - 12, by - 36, 24, 38);
+      ctx.strokeStyle = '#ccc'; ctx.lineWidth = 1.5;
+      ctx.strokeRect(bx - 12, by - 36, 24, 38);
+      // Neck
+      ctx.fillStyle = 'rgba(255,255,252,0.85)';
+      ctx.fillRect(bx - 5, by - 46, 10, 12);
+      ctx.strokeRect(bx - 5, by - 46, 10, 12);
+      // Cap
+      ctx.fillStyle = N;
+      ctx.fillRect(bx - 6, by - 50, 12, 6);
+      // Milk fill
+      ctx.fillStyle = 'rgba(255,255,250,0.6)';
+      ctx.fillRect(bx - 9, by - 10, 18, 12);
+      // Grab highlight
+      if (b.grabbed) {
+        ctx.strokeStyle = G; ctx.lineWidth = 2;
+        ctx.setLineDash([3, 3]);
+        ctx.strokeRect(bx - 14, by - 52, 28, 54);
+        ctx.setLineDash([]);
+      }
+    }
+
+    // ─── Crate (right) ───
+    var crX = sd.crateCX - 75, crY = sd.crateCY - 35, crW = 150, crH = 80;
+    // Crate body
+    ctx.fillStyle = '#c49a3c';
+    ctx.fillRect(crX, crY, crW, crH);
+    ctx.strokeStyle = '#8B6914'; ctx.lineWidth = 3;
+    ctx.strokeRect(crX, crY, crW, crH);
+    // Slats
+    ctx.strokeStyle = '#a07820'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(crX, crY + crH*0.33); ctx.lineTo(crX + crW, crY + crH*0.33); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(crX, crY + crH*0.66); ctx.lineTo(crX + crW, crY + crH*0.66); ctx.stroke();
+    // Crate label
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 10px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('VITA DAIRY', crX + crW/2, crY - 8);
+    // Target glow when holding bottle
+    if (sd.grabbedIdx >= 0) {
+      var glowA = 0.3 + Math.sin(Date.now()/300) * 0.15;
+      ctx.strokeStyle = 'rgba(242,194,0,' + glowA + ')';
+      ctx.lineWidth = 3; ctx.setLineDash([5, 4]);
+      ctx.strokeRect(crX - 4, crY - 4, crW + 8, crH + 8);
+      ctx.setLineDash([]);
+    }
+
+    // ─── Packed bottles in crate ───
+    for (var i = 0; i < sd.packBottles.length; i++) {
+      var b = sd.packBottles[i];
+      if (!b.packed) continue;
+      var bx = b.x, by = b.y;
+      ctx.fillStyle = 'rgba(255,255,252,0.9)';
+      ctx.fillRect(bx - 8, by - 24, 16, 26);
+      ctx.strokeStyle = '#ccc'; ctx.lineWidth = 1;
+      ctx.strokeRect(bx - 8, by - 24, 16, 26);
+      ctx.fillStyle = N;
+      ctx.fillRect(bx - 4, by - 30, 8, 4);
+      ctx.fillStyle = 'rgba(255,255,250,0.5)';
+      ctx.fillRect(bx - 5, by - 4, 10, 6);
+    }
+
+    // ─── Counter ───
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold ' + Math.min(22, W*0.03) + 'px "Segoe UI",system-ui,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Packed: ' + sd.packedCount + ' / ' + sd.packTarget, W/2, H*0.82);
+
+    // Instructions
+    ctx.fillStyle = '#333';
     ctx.font = 'bold ' + Math.min(15, W*0.022) + 'px "Segoe UI",system-ui,sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('QUALITY CONTROL LAB: Inspect each bottle — APPROVE good, REJECT defective', W/2, hdrY + 27);
+    var instr = sd.grabbedIdx >= 0 ? 'Now click the CRATE to drop it in!' : 'Click a bottle to grab it!';
+    ctx.fillText(instr, W/2, H*0.12);
 
-    // ─── Score bar ───
-    var tp = Math.min(1, stageScores[stage] / 500);
-    var pbx = W * 0.1, pby = H * 0.1, pbw = W * 0.8, pbh = 10;
-    ctx.fillStyle = 'rgba(0,0,0,0.05)';
-    rrect(pbx - 2, pby - 2, pbw + 4, pbh + 4, 6); ctx.fill();
-    var barGrad = ctx.createLinearGradient(pbx, 0, pbx + pbw, 0);
-    barGrad.addColorStop(0, '#ef4444'); barGrad.addColorStop(0.5, '#f59e0b'); barGrad.addColorStop(1, '#22c55e');
-    ctx.fillStyle = barGrad;
-    rrect(pbx, pby, pbw * tp, pbh, 5); ctx.fill();
-    ctx.fillStyle = '#333';
-    ctx.font = 'bold 12px "Segoe UI",system-ui,sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(stageScores[stage] + ' / 500', W/2, pby - 4);
-
-    // ─── Conveyor belt ───
-    var beltY = H * 0.78, beltH = 22;
-    ctx.fillStyle = '#ddd';
-    ctx.fillRect(0, beltY, W, beltH);
-    ctx.fillStyle = '#ccc';
-    ctx.fillRect(0, beltY, W, 2);
-    ctx.fillStyle = '#bbb';
-    ctx.fillRect(0, beltY + beltH - 2, W, 2);
-    // Animated rollers
-    var rollerSpacing = 30;
-    for (var rx = -(Date.now()/20 % rollerSpacing); rx < W; rx += rollerSpacing) {
-      ctx.fillStyle = '#aaa';
-      ctx.fillRect(rx, beltY + 3, 3, beltH - 6);
-    }
-    // Belt label
-    ctx.fillStyle = 'rgba(0,0,0,0.15)';
-    ctx.font = 'bold 9px "Segoe UI",system-ui,sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('CONVEYOR BELT', W/2, beltY + beltH/2 + 4);
-
-    // ─── Bottle display ───
-    if (sd.qcBottle) {
-      var b = sd.qcBottle;
-      var bcx = W/2, bcy = H * 0.38;
-
-      // Bottle shadow
-      ctx.fillStyle = 'rgba(0,0,0,0.1)';
-      ctx.beginPath(); ctx.ellipse(bcx, beltY, 35, 6, 0, 0, Math.PI*2); ctx.fill();
-
-      // Bottle body
-      var bw = 44, bh = 100;
-      ctx.fillStyle = 'rgba(255,255,255,0.92)';
-      rrect(bcx - bw/2, bcy - bh/2 + 10, bw, bh - 20, 8); ctx.fill();
-      ctx.strokeStyle = '#c0c0c0'; ctx.lineWidth = 2;
-      rrect(bcx - bw/2, bcy - bh/2 + 10, bw, bh - 20, 8); ctx.stroke();
-
-      // Crack overlay
-      if (b.cracked) {
-        ctx.strokeStyle = 'rgba(200,0,0,0.6)'; ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(bcx - 8, bcy - bh/2 + 15);
-        ctx.lineTo(bcx - 2, bcy - 8);
-        ctx.lineTo(bcx - 10, bcy + 5);
-        ctx.lineTo(bcx + 5, bcy + 20);
-        ctx.stroke();
-        // Crack label
-        ctx.fillStyle = '#ef4444';
-        ctx.font = 'bold 10px "Segoe UI",system-ui,sans-serif';
-        ctx.fillText('CRACKED!', bcx, bcy + bh/2 + 18);
-      }
-
-      // Milk fill
-      var fillH = bh * 0.55 * b.fillLevel;
-      ctx.fillStyle = 'rgba(255,255,250,0.7)';
-      ctx.fillRect(bcx - bw/2 + 6, bcy + bh/2 - 10 - fillH, bw - 12, fillH);
-      // Fill level line
-      ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 1;
-      ctx.setLineDash([2, 4]);
-      ctx.beginPath(); ctx.moveTo(bcx - bw/2 + 4, bcy + bh/2 - 10 - fillH);
-      ctx.lineTo(bcx + bw/2 - 4, bcy + bh/2 - 10 - fillH); ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Underfilled warning
-      if (!b.cracked && b.defective && b.defects.indexOf('underfilled') >= 0) {
-        ctx.fillStyle = '#f59e0b';
-        ctx.font = 'bold 10px "Segoe UI",system-ui,sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('UNDERFILLED', bcx, bcy + bh/2 + 16);
-      }
-
-      // Neck
-      ctx.fillStyle = 'rgba(255,255,255,0.88)';
-      ctx.fillRect(bcx - 7, bcy - bh/2 - 4, 14, 16);
-      ctx.strokeStyle = '#c0c0c0'; ctx.lineWidth = 1.5;
-      ctx.strokeRect(bcx - 7, bcy - bh/2 - 4, 14, 16);
-
-      // Cap
-      if (b.capSealed) {
-        ctx.fillStyle = N;
-        ctx.fillRect(bcx - 8, bcy - bh/2 - 10, 16, 8);
-        ctx.fillStyle = 'rgba(255,255,255,0.3)';
-        ctx.fillRect(bcx - 6, bcy - bh/2 - 9, 5, 2);
-      } else {
-        // Missing cap indicator
-        ctx.fillStyle = '#ef4444';
-        ctx.beginPath(); ctx.arc(bcx, bcy - bh/2 - 6, 8, 0, Math.PI*2); ctx.fill();
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 10px "Segoe UI",system-ui,sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('!', bcx, bcy - bh/2 - 2);
-        ctx.fillStyle = '#ef4444';
-        ctx.font = 'bold 10px "Segoe UI",system-ui,sans-serif';
-        ctx.fillText('NO CAP', bcx, bcy - bh/2 - 16);
-      }
-
-      // Label
-      var lx = bcx - 16, ly = bcy - 5, lw = 32, lh = 22;
-      ctx.fillStyle = b.labelCorrect ? 'rgba(255,255,255,0.95)' : 'rgba(255,200,100,0.9)';
-      rrect(lx, ly, lw, lh, 4); ctx.fill();
-      ctx.strokeStyle = '#ddd'; ctx.lineWidth = 1;
-      rrect(lx, ly, lw, lh, 4); ctx.stroke();
-      ctx.fillStyle = N;
-      ctx.font = 'bold 7px "Segoe UI",system-ui,sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(b.labelCorrect ? 'VITA' : '???', bcx, ly + lh/2 + 3);
-      if (!b.labelCorrect) {
-        ctx.fillStyle = '#f59e0b';
-        ctx.font = 'bold 10px "Segoe UI",system-ui,sans-serif';
-        ctx.fillText('WRONG LABEL', bcx, bcy + bh/2 + 32);
-      }
-
-      // Bottle number
-      ctx.fillStyle = '#888';
-      ctx.font = 'bold 10px "Segoe UI",system-ui,sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('Bottle #' + sd.qcTotalInspected, bcx, bcy - bh/2 - 28);
-    }
-
-    // ─── Result flash overlay ───
-    if (sd.qcFlash > 0) {
-      ctx.fillStyle = 'rgba(' + (sd.qcFlashColor === '#22c55e' ? '34,197,94' : '239,68,68') + ',' + (sd.qcFlash/0.3*0.15) + ')';
-      ctx.fillRect(0, 0, W, H);
-    }
-
-    // ─── Approve button ───
-    var appX = W * 0.62, appY = H * 0.6, appW = W * 0.16, appH = 56;
-    ctx.fillStyle = 'rgba(0,0,0,0.06)';
-    rrect(appX - 1, appY - 1, appW + 2, appH + 2, 14); ctx.fill();
-    ctx.fillStyle = '#22c55e';
-    rrect(appX, appY, appW, appH, 14); ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold ' + Math.min(18, W*0.025) + 'px "Segoe UI",system-ui,sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('APPROVE ✓', appX + appW/2, appY + appH/2 + 6);
-
-    // ─── Reject button ───
-    var rejX = W * 0.22, rejY = H * 0.6, rejW = W * 0.16, rejH = 56;
-    ctx.fillStyle = 'rgba(0,0,0,0.06)';
-    rrect(rejX - 1, rejY - 1, rejW + 2, rejH + 2, 14); ctx.fill();
-    ctx.fillStyle = '#ef4444';
-    rrect(rejX, rejY, rejW, rejH, 14); ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold ' + Math.min(18, W*0.025) + 'px "Segoe UI",system-ui,sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('REJECT ✗', rejX + rejW/2, rejY + rejH/2 + 6);
-
-    // ─── Educational fact ───
-    if (sd.qcFactTimer > 0) {
-      var fa = Math.min(1, sd.qcFactTimer / 0.3);
-      ctx.fillStyle = 'rgba(0,0,0,0.7)';
-      rrect(W * 0.15, H * 0.82, W * 0.7, 28, 8); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,' + fa + ')';
-      ctx.font = 'bold ' + Math.min(12, W*0.017) + 'px "Segoe UI",system-ui,sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(sd.qcFact || '', W/2, H*0.82 + 20);
-    }
-
-    // ─── Instructions ───
-    if (!sd.qcBottle) {
-      ctx.fillStyle = '#888';
-      ctx.font = 'bold ' + Math.min(14, W*0.02) + 'px "Segoe UI",system-ui,sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('Loading next bottle...', W/2, H * 0.5);
-    }
-
-    drawHUD('QC Lab: APPROVE good bottles, REJECT defects | Score: ' + stageScores[stage] + ' / 500');
+    drawHUD('Click bottles then click crate to pack! ' + sd.packedCount + '/' + sd.packTarget);
   }
 
   function drawHUD(text) {
