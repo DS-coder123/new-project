@@ -63,12 +63,12 @@
     { name:'Milking Time', icon:'M', color:'#60a5fa',
       desc:'Click the cow\'s udder to milk her! Each click fills the bucket. Fill it to 100% to complete!',
       fact:'Cows are milked 2-3 times daily. Modern machines gently extract milk in just 5-7 minutes per cow.' },
-    { name:'Cool the Milk', icon:'C', color:'#38bdf8',
-      desc:'Catch blue stars with your bucket! Each adds 100 points. Dodge yellow stars — they take 200! Reach 1000 points to pass!',
-      fact:'Milk leaves the cow at 37C and must be cooled to 4C within 2 hours to stay fresh and safe.' },
     { name:'Pasteurization', icon:'P', color:'#f97316',
       desc:'Hold click to heat the milk tank! Keep the temperature in the green sweet zone (68-78C) to pasteurize. Release to let it cool - don\'t let it burn or go cold!',
       fact:'Vita pasteurizes milk by heating it to 72C for 15 seconds, then rapidly cooling it. This kills harmful bacteria while preserving nutrients.' },
+    { name:'Cool the Milk', icon:'C', color:'#38bdf8',
+      desc:'Catch blue stars with your bucket! Each adds 100 points. Dodge yellow stars — they take 200! Reach 1000 points to pass!',
+      fact:'Milk leaves the cow at 37C and must be cooled to 4C within 2 hours to stay fresh and safe.' },
     { name:'Quality Control', icon:'B', color:'#a78bfa',
       desc:'Inspect each bottle for defects! Click APPROVE for good bottles, REJECT for defective ones. +50 for correct, -100 for wrong. Reach 500 points!',
       fact:'Every Vita bottle is inspected for fill level, cap seal, label accuracy, and cracks before leaving the facility.' },
@@ -142,16 +142,16 @@
         });
       }
     }
-    // Stage 3
+    // Stage 3 (Pasteurization)
     if (n === 2) {
-      sd.bucketX = W/2; sd.iceBlocks = []; sd.iceParticles = []; sd.iceSpawnTimer = 0;
-      sd.temp = 4.0;
-    }
-    // Stage 4
-    if (n === 3) {
       sd.tankCX = W * 0.5; sd.tankCY = H * 0.45; sd.tankR = Math.min(W, H) * 0.32;
       sd.heating = false; sd.zoneTime = 0; sd.zoneTarget = 12; sd.bubbles = [];
       sd.pasteurTemp = 35; sd.pasteurTime = 0;
+    }
+    // Stage 4 (Cool the Milk)
+    if (n === 3) {
+      sd.bucketX = W/2; sd.iceBlocks = []; sd.iceParticles = []; sd.iceSpawnTimer = 0;
+      sd.temp = 4.0;
     }
     // Stage 5
     if (n === 4) {
@@ -180,7 +180,7 @@
     if (gs === STATE.PLAYING) {
       var r = c.getBoundingClientRect();
       var cx = e.clientX - r.left, cy = e.clientY - r.top;
-      if (stage === 3) handlePasteurClick(cx, cy);
+      if (stage === 2) handlePasteurClick(cx, cy);
       if (stage === 4) handleQCClick(cx, cy);
     }
   });
@@ -193,7 +193,7 @@
     else if (gs === STATE.FINAL) handleFinalClick(clickX, clickY);
     else if (gs === STATE.PLAYING && stage === 0) handleStage0Down(clickX, clickY);
     if (gs === STATE.PLAYING && stage === 1) tryMilk(clickX, clickY);
-    if (gs === STATE.PLAYING && stage === 3) handlePasteurClick(clickX, clickY);
+    if (gs === STATE.PLAYING && stage === 2) handlePasteurClick(clickX, clickY);
     if (gs === STATE.PLAYING && stage === 4) handleQCClick(clickX, clickY);
   });
   c.addEventListener('touchmove', function(e) { e.preventDefault();
@@ -369,8 +369,8 @@
     }
   }
 
-  // Stage 2: Ice Catcher - catch blue stars for points
-  function updateStage2(dt) {
+  // Stage 3: Cool the Milk - catch stars
+  function updateStage3(dt) {
     // Move bucket to mouse/touch
     sd.bucketX = clickX;
     if (sd.bucketX < 30) sd.bucketX = 30;
@@ -438,8 +438,8 @@
     }
   }
 
-  // Stage 3: Temperature Balance - pasteurization
-  function updateStage3(dt) {
+  // Stage 2: Pasteurization - heat the milk
+  function updateStage2(dt) {
     sd.pasteurTime += dt;
     // Heating: hold mouse/touch to apply heat
     if (mouseDown || touchActive || keys[' '] || keys['arrowup']) {
@@ -652,7 +652,7 @@
 
     // ─── Process icons ───
     var iconY = ty + Math.min(60, W * 0.085);
-    var icons = ['F','M','C','P','B'];
+    var icons = ['F','M','P','C','B'];
     var iconX = cx - (icons.length - 1) * 38 / 2;
     for (var i = 0; i < icons.length; i++) {
       var ix = iconX + i * 38;
@@ -671,7 +671,7 @@
       // Stage label
       ctx.fillStyle = '#333';
       ctx.font = 'bold 9px "Segoe UI",system-ui,sans-serif';
-      var sName = ['Feed','Milk','Cool','Pasteurize','QC'][i];
+      var sName = ['Feed','Milk','Pasteurize','Cool','QC'][i];
       ctx.fillText(sName, ix, iconY + 28);
     }
 
@@ -1368,7 +1368,7 @@
     }
   }
 
-  function drawStage2() {
+  function drawStage3() {
     var groundY = H * 0.78;
     // Milk-white background
     var grad = ctx.createLinearGradient(0, 0, 0, H);
@@ -1522,7 +1522,7 @@
     ctx.closePath(); ctx.fill(); ctx.stroke();
   }
 
-  function drawStage3() {
+  function drawStage2() {
     // Industrial pasteurization room
     var grad = ctx.createLinearGradient(0, 0, 0, H);
     grad.addColorStop(0, '#1a1008'); grad.addColorStop(0.5, '#2a1a0e'); grad.addColorStop(1, '#150a04');
